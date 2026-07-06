@@ -1,8 +1,19 @@
 {
   "version": 2,
-  "dgSpecHash": "3uqri+lQcIY=",
+  "dgSpecHash": "y/FObKQxQkc=",
   "success": true,
-  "projectFilePath": "D:\\GitHub\\train-automation\\train-automation\\train-automation.csproj",
-  "expectedPackageFiles": [],
+  "projectFilePath": "D:\\train-automation\\train-automation.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\microsoft.bcl.asyncinterfaces\\6.0.0\\microsoft.bcl.asyncinterfaces.6.0.0.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\microsoft.playwright\\1.61.0\\microsoft.playwright.1.61.0.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\system.componentmodel.annotations\\5.0.0\\system.componentmodel.annotations.5.0.0.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\system.text.encodings.web\\6.0.0\\system.text.encodings.web.6.0.0.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\system.text.json\\6.0.10\\system.text.json.6.0.10.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\microsoft.netcore.app.ref\\9.0.13\\microsoft.netcore.app.ref.9.0.13.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\microsoft.windowsdesktop.app.ref\\9.0.13\\microsoft.windowsdesktop.app.ref.9.0.13.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\microsoft.aspnetcore.app.ref\\9.0.13\\microsoft.aspnetcore.app.ref.9.0.13.nupkg.sha512",
+    "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget\\microsoft.netcore.app.host.win-x64\\9.0.13\\microsoft.netcore.app.host.win-x64.9.0.13.nupkg.sha512"
+  ],
   "logs": []
 }
