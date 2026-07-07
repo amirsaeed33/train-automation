@@ -10,7 +10,7 @@
         "projectUniqueName": "D:\\train-automation\\train-automation.csproj",
         "projectName": "train-automation",
         "projectPath": "D:\\train-automation\\train-automation.csproj",
-        "packagesPath": "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget",
+        "packagesPath": "C:\\Users\\HP\\.nuget\\packages\\",
         "outputPath": "D:\\train-automation\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
@@ -40,7 +40,7 @@
           ]
         },
         "restoreAuditProperties": {
-          "enableAudit": "true",
+          "enableAudit": "false",
           "auditLevel": "low",
           "auditMode": "direct"
         },

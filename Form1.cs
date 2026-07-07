@@ -2,13 +2,16 @@ namespace train_automation;
 
 public partial class Form1 : Form
 {
-    private readonly TrainSearchSettings _settings = new();
+    private readonly EtrainStationService _stationService = new();
     private EtrainScraperService? _scraper;
+    private List<StationInfo> _stations = [];
 
     public Form1()
     {
         InitializeComponent();
         ConfigureGrid();
+        travelDatePicker.Value = DateTime.Today.AddDays(1);
+        searchButton.Enabled = false;
     }
 
     private void ConfigureGrid()
@@ -73,12 +76,113 @@ public partial class Form1 : Form
 
     private async void Form1_Load(object sender, EventArgs e)
     {
-        await RunSearchAsync();
+        await LoadStationsAsync();
     }
 
-    private async Task RunSearchAsync()
+    private async Task LoadStationsAsync()
     {
         UseWaitCursor = true;
+        searchButton.Enabled = false;
+
+        var progress = new Progress<string>(message =>
+        {
+            if (IsHandleCreated)
+            {
+                statusLabel.Text = message;
+            }
+        });
+
+        try
+        {
+            _stations = (await _stationService.GetStationsAsync(progress)).ToList();
+            PopulateStationCombo(fromStationCombo, _stations);
+            PopulateStationCombo(toStationCombo, _stations);
+
+            SelectDefaultStation(fromStationCombo, "NDLS", "New Delhi");
+            SelectDefaultStation(toStationCombo, "CSTM", "Mumbai");
+
+            statusLabel.Text = "Select From, To, and Date, then click Search.";
+            searchButton.Enabled = true;
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = $"Failed to load stations: {ex.Message}";
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "Station Load Failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            UseWaitCursor = false;
+        }
+    }
+
+    private static void PopulateStationCombo(ComboBox comboBox, IReadOnlyList<StationInfo> stations)
+    {
+        comboBox.BeginUpdate();
+        comboBox.DataSource = null;
+        comboBox.DisplayMember = string.Empty;
+        comboBox.ValueMember = string.Empty;
+        comboBox.Items.Clear();
+        foreach (var station in stations)
+        {
+            comboBox.Items.Add(station);
+        }
+        comboBox.EndUpdate();
+    }
+
+    private static void SelectDefaultStation(ComboBox comboBox, string code, string nameContains)
+    {
+        var match = comboBox.Items.Cast<StationInfo>()
+            .FirstOrDefault(station => station.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
+            ?? comboBox.Items.Cast<StationInfo>()
+                .FirstOrDefault(station => station.Name.Contains(nameContains, StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null)
+        {
+            comboBox.SelectedItem = match;
+        }
+    }
+
+    private async void SearchButton_Click(object sender, EventArgs e)
+    {
+        var fromStation = GetSelectedStation(fromStationCombo);
+        if (fromStation is null)
+        {
+            MessageBox.Show(this, "Please select a valid From station.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var toStation = GetSelectedStation(toStationCombo);
+        if (toStation is null)
+        {
+            MessageBox.Show(this, "Please select a valid To station.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (fromStation.Code.Equals(toStation.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, "From and To stations must be different.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        await RunSearchAsync(new TrainSearchSettings
+        {
+            FromStationCode = fromStation.Code,
+            FromStationName = fromStation.Name,
+            ToStationCode = toStation.Code,
+            ToStationName = toStation.Name,
+            TravelDate = travelDatePicker.Value.Date
+        });
+    }
+
+    private async Task RunSearchAsync(TrainSearchSettings settings)
+    {
+        UseWaitCursor = true;
+        searchButton.Enabled = false;
         trainGrid.DataSource = null;
 
         var progress = new Progress<string>(message =>
@@ -92,11 +196,11 @@ public partial class Form1 : Form
         try
         {
             _scraper ??= new EtrainScraperService();
-            var results = await _scraper.SearchTrainsAsync(_settings, progress);
+            var results = await _scraper.SearchTrainsAsync(settings, progress);
 
             trainGrid.DataSource = results;
             statusLabel.Text =
-                $"Showing {results.Count} train(s): {_settings.FromStation} → {_settings.ToStation} on {_settings.TravelDate:dd-MMM-yyyy}";
+                $"Showing {results.Count} train(s): {settings.FromStationName} → {settings.ToStationName} on {settings.TravelDate:dd-MMM-yyyy}";
         }
         catch (Exception ex)
         {
@@ -110,8 +214,30 @@ public partial class Form1 : Form
         }
         finally
         {
+            searchButton.Enabled = true;
             UseWaitCursor = false;
         }
+    }
+
+    private StationInfo? GetSelectedStation(ComboBox comboBox)
+    {
+        if (comboBox.SelectedItem is StationInfo selected)
+        {
+            return selected;
+        }
+
+        var text = comboBox.Text.Trim();
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        return _stations.FirstOrDefault(station =>
+                station.DisplayText.Equals(text, StringComparison.OrdinalIgnoreCase))
+            ?? _stations.FirstOrDefault(station =>
+                station.Code.Equals(text, StringComparison.OrdinalIgnoreCase))
+            ?? _stations.FirstOrDefault(station =>
+                station.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
     }
 
     protected override async void OnFormClosed(FormClosedEventArgs e)

@@ -13,7 +13,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         progress?.Report("Starting browser...");
-        await EnsureBrowserAsync();
+        await EnsureBrowserAsync(progress);
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
         {
@@ -40,57 +40,39 @@ public sealed class EtrainScraperService : IAsyncDisposable
                 null,
                 new PageWaitForFunctionOptions { Timeout = 90_000 });
 
-            progress?.Report($"Setting route: {settings.FromStation} → {settings.ToStation}...");
+            progress?.Report($"Setting route: {settings.FromStationName} → {settings.ToStationName}...");
             var stationsReady = await page.EvaluateAsync<bool>(
                 """
-                ({ fromQuery, toQuery }) => {
-                    const findStation = (query) => {
-                        const q = query.trim().toLowerCase();
-                        if (!q) return null;
-
-                        for (const [code, name] of Object.entries(stnname)) {
-                            if (code.toLowerCase() === q) {
-                                return { code, name };
-                            }
-                        }
-
-                        for (const [code, name] of Object.entries(stnname)) {
-                            if (name.toLowerCase().includes(q)) {
-                                return { code, name };
-                            }
-                        }
-
-                        return null;
-                    };
-
-                    const from = findStation(fromQuery);
-                    const to = findStation(toQuery);
-                    if (!from || !to) {
-                        return false;
-                    }
-
-                    const setField = (visibleName, hiddenName, station) => {
+                ({ fromCode, fromName, toCode, toName }) => {
+                    const setField = (visibleName, hiddenName, code, name) => {
                         const visible = document.querySelector(`input[name="${visibleName}"]`);
                         const hidden = document.querySelector(`input[name="${hiddenName}"]`);
                         if (!visible || !hidden) {
                             return false;
                         }
 
-                        visible.value = station.name;
-                        hidden.value = station.code;
+                        visible.value = name;
+                        hidden.value = code;
                         visible.classList.remove('error');
                         return true;
                     };
 
-                    return setField('station1', 'stn1', from) && setField('station2', 'stn2', to);
+                    return setField('station1', 'stn1', fromCode, fromName)
+                        && setField('station2', 'stn2', toCode, toName);
                 }
                 """,
-                new { fromQuery = settings.FromStation, toQuery = settings.ToStation });
+                new
+                {
+                    fromCode = settings.FromStationCode,
+                    fromName = settings.FromStationName,
+                    toCode = settings.ToStationCode,
+                    toName = settings.ToStationName
+                });
 
             if (!stationsReady)
             {
                 throw new InvalidOperationException(
-                    $"Could not resolve stations '{settings.FromStation}' and/or '{settings.ToStation}'.");
+                    $"Could not set stations '{settings.FromStationName}' and/or '{settings.ToStationName}'.");
             }
 
             await page.EvaluateAsync(
@@ -226,19 +208,43 @@ public sealed class EtrainScraperService : IAsyncDisposable
         Availability = dto.Availability ?? string.Empty
     };
 
-    private async Task EnsureBrowserAsync()
+    private async Task EnsureBrowserAsync(IProgress<string>? progress = null)
     {
         if (_browser is not null)
         {
             return;
         }
 
-        _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        _playwright ??= await Playwright.CreateAsync();
+
+        try
         {
-            Headless = true
-        });
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true
+            });
+        }
+        catch (PlaywrightException ex) when (IsMissingBrowserError(ex))
+        {
+            progress?.Report("Installing browser for first run (one-time setup)...");
+            var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    "Playwright browser install failed. Run this in PowerShell:\n" +
+                    "powershell -ExecutionPolicy Bypass -File \"bin\\Debug\\net9.0-windows\\playwright.ps1\" install chromium");
+            }
+
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true
+            });
+        }
     }
+
+    private static bool IsMissingBrowserError(PlaywrightException ex) =>
+        ex.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("Please run the following command", StringComparison.OrdinalIgnoreCase);
 
     public async ValueTask DisposeAsync()
     {
