@@ -97,11 +97,6 @@ public sealed class EtrainScraperService : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             progress?.Report("Searching trains...");
-            var availabilityResponse = page.WaitForResponseAsync(
-                response => response.Url.Contains("ajax.php", StringComparison.OrdinalIgnoreCase)
-                    && response.Request.PostData?.Contains("avdata", StringComparison.OrdinalIgnoreCase) == true,
-                new PageWaitForResponseOptions { Timeout = 90_000 });
-
             await page.ClickAsync("#tbssbmtbtn");
 
             await page.WaitForFunctionAsync(
@@ -124,15 +119,20 @@ public sealed class EtrainScraperService : IAsyncDisposable
                 null,
                 new PageWaitForFunctionOptions { Timeout = 90_000 });
 
-            progress?.Report("Loading seat availability...");
+            progress?.Report("Loading train details...");
             try
             {
-                await availabilityResponse;
+                await page.WaitForResponseAsync(
+                    response => response.Url.Contains("ajax.php", StringComparison.OrdinalIgnoreCase)
+                        && response.Request.PostData?.Contains("avdata", StringComparison.OrdinalIgnoreCase) == true,
+                    new PageWaitForResponseOptions { Timeout = 8_000 });
             }
             catch (TimeoutException)
             {
-                await page.WaitForTimeoutAsync(3000);
+                // Short/local routes (e.g. NDLS -> DLI) may only list UNRESERVED classes.
             }
+
+            await page.WaitForTimeoutAsync(1000);
 
             var results = await page.EvaluateAsync<TrainResultDto[]>(
                 """
@@ -140,33 +140,24 @@ public sealed class EtrainScraperService : IAsyncDisposable
                     const table = document.querySelector('.myTable[contain="tbs"]');
                     if (!table) return [];
 
-                    const dayCells = [7, 8, 9, 10, 11, 12, 13];
-                    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const rows = Array.from(table.querySelectorAll('tr'));
                     const results = [];
 
+                    const dayValue = (cell) => {
+                        const value = cell?.textContent?.trim() ?? '';
+                        return value === 'X' || value === 'Y' ? value : '';
+                    };
+
                     for (const row of rows) {
                         const cells = row.querySelectorAll('td');
-                        if (cells.length < 6) continue;
+                        if (cells.length < 14) continue;
 
                         const trainNumber = cells[0]?.textContent?.trim() ?? '';
                         if (!/^\d/.test(trainNumber)) continue;
 
-                        const runsOn = dayCells
-                            .map((index, dayIndex) => cells[index]?.textContent?.trim() === 'X' ? dayNames[dayIndex] : null)
+                        const availableClasses = Array.from(row.querySelectorAll('a.cavlink, span.inputimg'))
+                            .map((element) => element.textContent.trim())
                             .filter(Boolean)
-                            .join(', ');
-
-                        const availability = Array.from(row.querySelectorAll('a.cavlink'))
-                            .map((link) => {
-                                const cls = link.textContent.trim();
-                                const status = link.classList.contains('avl') ? 'AVL'
-                                    : link.classList.contains('rac') ? 'RAC'
-                                    : link.classList.contains('wl') ? 'WL'
-                                    : link.classList.contains('nill') ? 'NA'
-                                    : '';
-                                return status ? `${cls}:${status}` : cls;
-                            })
                             .join(', ');
 
                         results.push({
@@ -176,9 +167,15 @@ public sealed class EtrainScraperService : IAsyncDisposable
                             departure: cells[3]?.textContent?.trim() ?? '',
                             toStation: cells[4]?.textContent?.trim() ?? '',
                             arrival: cells[5]?.textContent?.trim() ?? '',
-                            duration: cells[6]?.textContent?.trim() ?? '',
-                            runsOn,
-                            availability
+                            travelTime: cells[6]?.textContent?.trim() ?? '',
+                            sunday: dayValue(cells[7]),
+                            monday: dayValue(cells[8]),
+                            tuesday: dayValue(cells[9]),
+                            wednesday: dayValue(cells[10]),
+                            thursday: dayValue(cells[11]),
+                            friday: dayValue(cells[12]),
+                            saturday: dayValue(cells[13]),
+                            availableClasses
                         });
                     }
 
@@ -203,9 +200,15 @@ public sealed class EtrainScraperService : IAsyncDisposable
         Departure = dto.Departure ?? string.Empty,
         ToStation = dto.ToStation ?? string.Empty,
         Arrival = dto.Arrival ?? string.Empty,
-        Duration = dto.Duration ?? string.Empty,
-        RunsOn = dto.RunsOn ?? string.Empty,
-        Availability = dto.Availability ?? string.Empty
+        TravelTime = dto.TravelTime ?? string.Empty,
+        Sunday = dto.Sunday ?? string.Empty,
+        Monday = dto.Monday ?? string.Empty,
+        Tuesday = dto.Tuesday ?? string.Empty,
+        Wednesday = dto.Wednesday ?? string.Empty,
+        Thursday = dto.Thursday ?? string.Empty,
+        Friday = dto.Friday ?? string.Empty,
+        Saturday = dto.Saturday ?? string.Empty,
+        AvailableClasses = dto.AvailableClasses ?? string.Empty
     };
 
     private async Task EnsureBrowserAsync(IProgress<string>? progress = null)
@@ -266,8 +269,14 @@ public sealed class EtrainScraperService : IAsyncDisposable
         public string? Departure { get; set; }
         public string? ToStation { get; set; }
         public string? Arrival { get; set; }
-        public string? Duration { get; set; }
-        public string? RunsOn { get; set; }
-        public string? Availability { get; set; }
+        public string? TravelTime { get; set; }
+        public string? Sunday { get; set; }
+        public string? Monday { get; set; }
+        public string? Tuesday { get; set; }
+        public string? Wednesday { get; set; }
+        public string? Thursday { get; set; }
+        public string? Friday { get; set; }
+        public string? Saturday { get; set; }
+        public string? AvailableClasses { get; set; }
     }
 }

@@ -25,15 +25,15 @@ namespace train_automation
             var results = await scraper.SearchTrainsAsync(new TrainSearchSettings
             {
                 FromStationCode = "NDLS",
-                FromStationName = "New Delhi",
-                ToStationCode = "CSTM",
-                ToStationName = "Mumbai CST",
+                FromStationName = "NEW DELHI",
+                ToStationCode = "DLI",
+                ToStationName = "DELHI",
                 TravelDate = DateTime.Today.AddDays(1)
             }, progress);
             Console.WriteLine($"Total trains: {results.Count}");
             foreach (var train in results.Take(5))
             {
-                Console.WriteLine($"{train.TrainNumber} | {train.TrainName} | {train.Departure}-{train.Arrival} | {train.Availability}");
+                Console.WriteLine($"{train.TrainNumber} | {train.TrainName} | {train.Departure}-{train.Arrival} | {train.AvailableClasses}");
             }
         }
     }

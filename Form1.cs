@@ -2,122 +2,62 @@ namespace train_automation;
 
 public partial class Form1 : Form
 {
-    private readonly EtrainStationService _stationService = new();
     private EtrainScraperService? _scraper;
-    private List<StationInfo> _stations = [];
+    private readonly IReadOnlyList<StationInfo> _stations = HardcodedStations.All;
 
     public Form1()
     {
         InitializeComponent();
         ConfigureGrid();
         travelDatePicker.Value = DateTime.Today.AddDays(1);
-        searchButton.Enabled = false;
     }
 
     private void ConfigureGrid()
     {
         trainGrid.AutoGenerateColumns = false;
         trainGrid.Columns.Clear();
+
+        AddColumn(nameof(TrainResult.TrainNumber), "Train Number", 75);
+        AddColumn(nameof(TrainResult.TrainName), "Train Name", 150);
+        AddColumn(nameof(TrainResult.FromStation), "From", 55);
+        AddColumn(nameof(TrainResult.Departure), "Depart. Time", 75);
+        AddColumn(nameof(TrainResult.ToStation), "To", 55);
+        AddColumn(nameof(TrainResult.Arrival), "Arrival Time", 75);
+        AddColumn(nameof(TrainResult.TravelTime), "Travel Time", 75);
+        AddColumn(nameof(TrainResult.Sunday), "Su", 35);
+        AddColumn(nameof(TrainResult.Monday), "Mo", 35);
+        AddColumn(nameof(TrainResult.Tuesday), "Tu", 35);
+        AddColumn(nameof(TrainResult.Wednesday), "We", 35);
+        AddColumn(nameof(TrainResult.Thursday), "Th", 35);
+        AddColumn(nameof(TrainResult.Friday), "Fr", 35);
+        AddColumn(nameof(TrainResult.Saturday), "Sa", 35);
+        AddColumn(nameof(TrainResult.AvailableClasses), "Available Classes", 120);
+    }
+
+    private void AddColumn(string propertyName, string headerText, int fillWeight)
+    {
         trainGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            DataPropertyName = nameof(TrainResult.TrainNumber),
-            HeaderText = "Train No.",
-            FillWeight = 70
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.TrainName),
-            HeaderText = "Train Name",
-            FillWeight = 140
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.FromStation),
-            HeaderText = "From",
-            FillWeight = 90
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.Departure),
-            HeaderText = "Departure",
-            FillWeight = 70
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.ToStation),
-            HeaderText = "To",
-            FillWeight = 90
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.Arrival),
-            HeaderText = "Arrival",
-            FillWeight = 70
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.Duration),
-            HeaderText = "Duration",
-            FillWeight = 70
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.RunsOn),
-            HeaderText = "Runs On",
-            FillWeight = 110
-        });
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(TrainResult.Availability),
-            HeaderText = "Availability",
-            FillWeight = 180
+            DataPropertyName = propertyName,
+            HeaderText = headerText,
+            FillWeight = fillWeight
         });
     }
 
-    private async void Form1_Load(object sender, EventArgs e)
+    private void Form1_Load(object sender, EventArgs e)
     {
-        await LoadStationsAsync();
+        LoadStations();
     }
 
-    private async Task LoadStationsAsync()
+    private void LoadStations()
     {
-        UseWaitCursor = true;
-        searchButton.Enabled = false;
+        PopulateStationCombo(fromStationCombo, _stations);
+        PopulateStationCombo(toStationCombo, _stations);
 
-        var progress = new Progress<string>(message =>
-        {
-            if (IsHandleCreated)
-            {
-                statusLabel.Text = message;
-            }
-        });
+        SelectDefaultStation(fromStationCombo, "NDLS", "NEW DELHI");
+        SelectDefaultStation(toStationCombo, "DLI", "DELHI");
 
-        try
-        {
-            _stations = (await _stationService.GetStationsAsync(progress)).ToList();
-            PopulateStationCombo(fromStationCombo, _stations);
-            PopulateStationCombo(toStationCombo, _stations);
-
-            SelectDefaultStation(fromStationCombo, "NDLS", "New Delhi");
-            SelectDefaultStation(toStationCombo, "CSTM", "Mumbai");
-
-            statusLabel.Text = "Select From, To, and Date, then click Search.";
-            searchButton.Enabled = true;
-        }
-        catch (Exception ex)
-        {
-            statusLabel.Text = $"Failed to load stations: {ex.Message}";
-            MessageBox.Show(
-                this,
-                ex.Message,
-                "Station Load Failed",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
-        finally
-        {
-            UseWaitCursor = false;
-        }
+        statusLabel.Text = "Select From, To, and Date, then click Search.";
     }
 
     private static void PopulateStationCombo(ComboBox comboBox, IReadOnlyList<StationInfo> stations)
