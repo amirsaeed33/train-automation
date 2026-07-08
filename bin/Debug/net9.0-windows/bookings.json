@@ -3,30 +3,88 @@
     "SavedAt": "2026-07-08T09:05:08.4843561+05:00",
     "TrainNumber": "64411",
     "TrainName": "SBB DLI EMU",
+    "TrainType": "",
     "FromStation": "NDLS",
     "ToStation": "DLI",
+    "BoardingPoint": "",
+    "TravelClass": "",
+    "Quota": "",
+    "SelectedDay": "",
     "TravelDate": "2026-07-09T00:00:00+05:00",
+    "Mobile": "",
+    "Fare": "",
     "Passengers": [
       {
         "Name": "Daniyal",
         "Age": 25,
         "Gender": "Male",
-        "Phone": "0316785460"
+        "Berth": "",
+        "Food": "",
+        "Nationality": "",
+        "Passport": "",
+        "IsChild": false,
+        "IsSenior": false,
+        "BedRoll": false
       },
       {
         "Name": "Test123",
         "Age": 19,
         "Gender": "Male",
-        "Phone": "0378546321"
+        "Berth": "",
+        "Food": "",
+        "Nationality": "",
+        "Passport": "",
+        "IsChild": false,
+        "IsSenior": false,
+        "BedRoll": false
       }
     ],
     "Preferences": {
       "AutoUpgradation": true,
       "BookOnlyIfConfirmBerths": false,
-      "ReservationChoice": "Book only if all berths are allotted in same coach",
-      "PreferredCoachNo": ""
-    },
-    "TravelInsurance": "Yes",
-    "PaymentMode": "Credit/Debit Cards, Net Banking, Wallets, UPI and Others"
+      "TicketSlot": "",
+      "Gateway": "",
+      "PriorBank": "",
+      "BackupBank": "",
+      "TicketName": ""
+    }
+  },
+  {
+    "SavedAt": "2026-07-08T15:18:35.4267508+05:00",
+    "TrainNumber": "64051",
+    "TrainName": "PWL GZB EMU",
+    "TrainType": "Mail/Express-E",
+    "FromStation": "NDLS",
+    "ToStation": "DLI",
+    "BoardingPoint": "NDLS",
+    "TravelClass": "UNRESERVED",
+    "Quota": "General",
+    "SelectedDay": "Saturday",
+    "TravelDate": "2026-07-09T00:00:00+05:00",
+    "Mobile": "9222983223",
+    "Fare": "0",
+    "Passengers": [
+      {
+        "Name": "Second test",
+        "Age": 23,
+        "Gender": "M",
+        "Berth": "No Choice",
+        "Food": "No Choice",
+        "Nationality": "India-IN",
+        "Passport": "",
+        "IsChild": false,
+        "IsSenior": true,
+        "BedRoll": false
+      }
+    ],
+    "Preferences": {
+      "AutoUpgradation": true,
+      "BookOnlyIfConfirmBerths": true,
+      "TicketSlot": "Select_Auto Slot",
+      "Gateway": "Netbanking / Wallet",
+      "PriorBank": "PayTM-QR_paytm@qr",
+      "BackupBank": "No Alternate Bank",
+      "TicketName": "NDLS_DLI"
+    }
   }
 ]
