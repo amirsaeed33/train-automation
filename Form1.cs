@@ -4,12 +4,14 @@ public partial class Form1 : Form
 {
     private EtrainScraperService? _scraper;
     private readonly IReadOnlyList<StationInfo> _stations = HardcodedStations.All;
+    private TrainSearchSettings? _lastSearchSettings;
 
     public Form1()
     {
         InitializeComponent();
         ConfigureGrid();
         travelDatePicker.Value = DateTime.Today.AddDays(1);
+        trainGrid.CellDoubleClick += TrainGrid_CellDoubleClick;
     }
 
     private void ConfigureGrid()
@@ -57,7 +59,7 @@ public partial class Form1 : Form
         SelectDefaultStation(fromStationCombo, "NDLS", "NEW DELHI");
         SelectDefaultStation(toStationCombo, "DLI", "DELHI");
 
-        statusLabel.Text = "Select From, To, and Date, then click Search.";
+        statusLabel.Text = "Select From, To, and Date, then click Search. Double-click a train row to open booking.";
     }
 
     private static void PopulateStationCombo(ComboBox comboBox, IReadOnlyList<StationInfo> stations)
@@ -119,6 +121,22 @@ public partial class Form1 : Form
         });
     }
 
+    private void TrainGrid_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || _lastSearchSettings is null)
+        {
+            return;
+        }
+
+        if (trainGrid.Rows[e.RowIndex].DataBoundItem is not TrainResult train)
+        {
+            return;
+        }
+
+        using var dialog = new BookingDialog(train, _lastSearchSettings);
+        dialog.ShowDialog(this);
+    }
+
     private async Task RunSearchAsync(TrainSearchSettings settings)
     {
         UseWaitCursor = true;
@@ -138,9 +156,10 @@ public partial class Form1 : Form
             _scraper ??= new EtrainScraperService();
             var results = await _scraper.SearchTrainsAsync(settings, progress);
 
+            _lastSearchSettings = settings;
             trainGrid.DataSource = results;
             statusLabel.Text =
-                $"Showing {results.Count} train(s): {settings.FromStationName} → {settings.ToStationName} on {settings.TravelDate:dd-MMM-yyyy}";
+                $"Showing {results.Count} train(s): {settings.FromStationName} → {settings.ToStationName} on {settings.TravelDate:dd-MMM-yyyy}. Double-click a train to book.";
         }
         catch (Exception ex)
         {

@@ -1,0 +1,32 @@
+[
+  {
+    "SavedAt": "2026-07-08T09:05:08.4843561+05:00",
+    "TrainNumber": "64411",
+    "TrainName": "SBB DLI EMU",
+    "FromStation": "NDLS",
+    "ToStation": "DLI",
+    "TravelDate": "2026-07-09T00:00:00+05:00",
+    "Passengers": [
+      {
+        "Name": "Daniyal",
+        "Age": 25,
+        "Gender": "Male",
+        "Phone": "0316785460"
+      },
+      {
+        "Name": "Test123",
+        "Age": 19,
+        "Gender": "Male",
+        "Phone": "0378546321"
+      }
+    ],
+    "Preferences": {
+      "AutoUpgradation": true,
+      "BookOnlyIfConfirmBerths": false,
+      "ReservationChoice": "Book only if all berths are allotted in same coach",
+      "PreferredCoachNo": ""
+    },
+    "TravelInsurance": "Yes",
+    "PaymentMode": "Credit/Debit Cards, Net Banking, Wallets, UPI and Others"
+  }
+]
