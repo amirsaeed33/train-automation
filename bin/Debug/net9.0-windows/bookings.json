@@ -86,5 +86,43 @@
       "BackupBank": "No Alternate Bank",
       "TicketName": "NDLS_DLI"
     }
+  },
+  {
+    "SavedAt": "2026-07-08T16:29:55.1667976+05:00",
+    "TrainNumber": "64437",
+    "TrainName": "GZB DLI EMU",
+    "TrainType": "Mail/Express-E",
+    "FromStation": "NDLS",
+    "ToStation": "DLI",
+    "BoardingPoint": "NDLS",
+    "TravelClass": "UNRESERVED",
+    "Quota": "General",
+    "SelectedDay": "Wednesday",
+    "TravelDate": "2026-07-09T00:00:00+05:00",
+    "Mobile": "2332233223",
+    "Fare": "0",
+    "Passengers": [
+      {
+        "Name": "Third test wednesday",
+        "Age": 0,
+        "Gender": "M",
+        "Berth": "No Choice",
+        "Food": "No Choice",
+        "Nationality": "India-IN",
+        "Passport": "",
+        "IsChild": false,
+        "IsSenior": true,
+        "BedRoll": false
+      }
+    ],
+    "Preferences": {
+      "AutoUpgradation": true,
+      "BookOnlyIfConfirmBerths": true,
+      "TicketSlot": "Select_Auto Slot",
+      "Gateway": "Netbanking / Wallet",
+      "PriorBank": "PayTM-QR_paytm@qr",
+      "BackupBank": "No Alternate Bank",
+      "TicketName": "NDLS_DLI"
+    }
   }
 ]

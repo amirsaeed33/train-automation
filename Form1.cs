@@ -2,6 +2,22 @@ namespace train_automation;
 
 public partial class Form1 : Form
 {
+    private static readonly string[] DayColumns =
+    [
+        nameof(TrainResult.Monday),
+        nameof(TrainResult.Tuesday),
+        nameof(TrainResult.Wednesday),
+        nameof(TrainResult.Thursday),
+        nameof(TrainResult.Friday),
+        nameof(TrainResult.Saturday),
+        nameof(TrainResult.Sunday)
+    ];
+
+    private static readonly string[] DayNames =
+    [
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+    ];
+
     private EtrainScraperService? _scraper;
     private readonly IReadOnlyList<StationInfo> _stations = HardcodedStations.All;
     private TrainSearchSettings? _lastSearchSettings;
@@ -17,6 +33,7 @@ public partial class Form1 : Form
     {
         LoadStations();
         ConfigurePassengerGrid();
+        ConfigureTrainListGrid();
         ConfigureDropdowns();
     }
 
@@ -173,21 +190,14 @@ public partial class Form1 : Form
 
             if (results.Count == 0)
             {
+                trainGrid.DataSource = null;
                 MessageBox.Show(this, "No trains found for selected route.", "Train List", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 statusLabel.Text = "No trains found.";
                 return;
             }
 
-            using var trainListDialog = new TrainListDialog(results, $"{fromStation.Code} -> {toStation.Code}");
-            if (trainListDialog.ShowDialog(this) == DialogResult.OK && trainListDialog.SelectedTrain is not null)
-            {
-                ApplyTrainSelection(trainListDialog.SelectedTrain, fromStation.Code, toStation.Code);
-                statusLabel.Text = $"Selected train {trainListDialog.SelectedTrain.Train.TrainNumber} for {trainListDialog.SelectedTrain.SelectedDay}.";
-            }
-            else
-            {
-                statusLabel.Text = "Train selection cancelled.";
-            }
+            ShowTrainsInParent(results, $"{fromStation.Code} -> {toStation.Code}");
+            statusLabel.Text = $"Found {results.Count} train(s). Click a day column below to select.";
         }
         catch (Exception ex)
         {
@@ -199,6 +209,117 @@ public partial class Form1 : Form
             findButton.Enabled = true;
             UseWaitCursor = false;
         }
+    }
+
+    private void ConfigureTrainListGrid()
+    {
+        trainGrid.AutoGenerateColumns = false;
+        trainGrid.Columns.Clear();
+
+        AddTrainCol(nameof(TrainResult.TrainNumber), "Train No", 65);
+        AddTrainCol(nameof(TrainResult.TrainName), "Train Name", 120);
+        AddTrainCol(nameof(TrainResult.FromStation), "From", 45);
+        AddTrainCol(nameof(TrainResult.Departure), "Depart", 55);
+        AddTrainCol(nameof(TrainResult.ToStation), "To", 45);
+        AddTrainCol(nameof(TrainResult.Arrival), "Arrival", 55);
+        AddTrainCol(nameof(TrainResult.TravelTime), "Travel", 55);
+        AddTrainCol(nameof(TrainResult.Monday), "M", 28);
+        AddTrainCol(nameof(TrainResult.Tuesday), "T", 28);
+        AddTrainCol(nameof(TrainResult.Wednesday), "W", 28);
+        AddTrainCol(nameof(TrainResult.Thursday), "T", 28);
+        AddTrainCol(nameof(TrainResult.Friday), "F", 28);
+        AddTrainCol(nameof(TrainResult.Saturday), "S", 28);
+        AddTrainCol(nameof(TrainResult.Sunday), "S", 28);
+        AddTrainCol(nameof(TrainResult.AvailableClasses), "Classes", 100);
+    }
+
+    private void AddTrainCol(string property, string header, int width)
+    {
+        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            DataPropertyName = property,
+            HeaderText = header,
+            Width = width,
+            SortMode = DataGridViewColumnSortMode.NotSortable
+        });
+    }
+
+    private void ShowTrainsInParent(IReadOnlyList<TrainResult> results, string routeTitle)
+    {
+        trainListHeader.Text = $"Train List ({routeTitle}) — click a day (M/T/W/T/F/S/S) to select";
+        trainGrid.DataSource = results.ToList();
+        StyleDayCells();
+    }
+
+    private void StyleDayCells()
+    {
+        foreach (DataGridViewRow row in trainGrid.Rows)
+        {
+            if (row.DataBoundItem is not TrainResult)
+            {
+                continue;
+            }
+
+            foreach (var dayColumn in DayColumns)
+            {
+                var column = trainGrid.Columns[dayColumn];
+                if (column is null)
+                {
+                    continue;
+                }
+
+                var cell = row.Cells[column.Index];
+                var runs = cell.Value?.ToString() is "X" or "Y";
+                cell.Style.ForeColor = runs ? Color.DarkGreen : Color.LightGray;
+                cell.Style.Font = runs ? new Font(trainGrid.Font, FontStyle.Bold) : trainGrid.Font;
+            }
+        }
+    }
+
+    private void TrainGrid_CellClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex < 0)
+        {
+            return;
+        }
+
+        var column = trainGrid.Columns[e.ColumnIndex];
+        var dayIndex = Array.IndexOf(DayColumns, column.DataPropertyName);
+        if (dayIndex < 0)
+        {
+            return;
+        }
+
+        if (trainGrid.Rows[e.RowIndex].DataBoundItem is not TrainResult train)
+        {
+            return;
+        }
+
+        var dayValue = column.DataPropertyName switch
+        {
+            nameof(TrainResult.Monday) => train.Monday,
+            nameof(TrainResult.Tuesday) => train.Tuesday,
+            nameof(TrainResult.Wednesday) => train.Wednesday,
+            nameof(TrainResult.Thursday) => train.Thursday,
+            nameof(TrainResult.Friday) => train.Friday,
+            nameof(TrainResult.Saturday) => train.Saturday,
+            nameof(TrainResult.Sunday) => train.Sunday,
+            _ => string.Empty
+        };
+
+        if (dayValue is not "X" and not "Y")
+        {
+            return;
+        }
+
+        var fromCode = GetSelectedStation(fromStationCombo)?.Code ?? boardingPointText.Text;
+        ApplyTrainSelection(new TrainSelection
+        {
+            Train = train,
+            SelectedDay = DayNames[dayIndex]
+        }, fromCode, GetSelectedStation(toStationCombo)?.Code ?? string.Empty);
+
+        statusLabel.Text = $"Selected train {train.TrainNumber} for {DayNames[dayIndex]}.";
     }
 
     private void ApplyTrainSelection(TrainSelection selection, string fromCode, string toCode)
