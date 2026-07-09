@@ -252,10 +252,19 @@ public partial class Form1 : Form
 
         UseWaitCursor = true;
         findButton.Enabled = false;
-        statusLabel.Text = "Searching trains on Indian Railways...";
 
         try
         {
+            _lastSearchSettings = settings;
+
+            if (TrainRouteCache.TryGet(settings, out var cachedTrains))
+            {
+                ShowTrainListPopup(cachedTrains, $"{fromStation.Code} -> {toStation.Code}");
+                statusLabel.Text = $"Loaded {cachedTrains.Count} train(s) from cache (valid 2 days). Click a class in the popup.";
+                return;
+            }
+
+            statusLabel.Text = "Searching trains on Indian Railways...";
             _scraper ??= new IndianRailScraperService
             {
                 CaptchaProvider = PromptCaptchaAsync,
@@ -264,7 +273,7 @@ public partial class Form1 : Form
             _scraper.DialogOwner = this;
 
             var results = await _scraper.SearchTrainsAsync(settings);
-            _lastSearchSettings = settings;
+            TrainRouteCache.Save(settings, results);
 
             if (results.Count == 0)
             {
@@ -309,6 +318,19 @@ public partial class Form1 : Form
 
         try
         {
+            _scraper ??= new IndianRailScraperService
+            {
+                CaptchaProvider = PromptCaptchaAsync,
+                DialogOwner = this
+            };
+            _scraper.DialogOwner = this;
+
+            if (!_scraper.HasActiveSessionFor(_lastSearchSettings))
+            {
+                statusLabel.Text = "Connecting to Indian Railways (captcha may be required)...";
+                await _scraper.SearchTrainsAsync(_lastSearchSettings);
+            }
+
             var availability = await _scraper.GetClassAvailabilityAsync(
                 GetIndianRailQuotaCode(),
                 e.Train.TrainNumber,

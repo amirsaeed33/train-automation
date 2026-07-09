@@ -18,6 +18,16 @@ public sealed class IndianRailScraperService : IAsyncDisposable
 
     public IWin32Window? DialogOwner { get; set; }
 
+    private TrainSearchSettings? _activeSessionSettings;
+
+    public bool HasActiveSessionFor(TrainSearchSettings settings) =>
+        _page is not null
+        && _activeSessionSettings is not null
+        && _activeSessionSettings.FromStationCode.Equals(settings.FromStationCode, StringComparison.OrdinalIgnoreCase)
+        && _activeSessionSettings.ToStationCode.Equals(settings.ToStationCode, StringComparison.OrdinalIgnoreCase)
+        && _activeSessionSettings.TravelDate.Date == settings.TravelDate.Date
+        && _activeSessionSettings.Quota.Equals(settings.Quota, StringComparison.OrdinalIgnoreCase);
+
     public async Task<IReadOnlyList<TrainResult>> SearchTrainsAsync(
         TrainSearchSettings settings,
         IProgress<string>? progress = null,
@@ -86,7 +96,9 @@ public sealed class IndianRailScraperService : IAsyncDisposable
         }
 
         var results = ParseTrainList(responseJson, settings);
-        return await EnrichClassLinkKeysFromPageAsync(page, results);
+        var enriched = await EnrichClassLinkKeysFromPageAsync(page, results);
+        _activeSessionSettings = settings;
+        return enriched;
     }
 
     public async Task<ClassAvailabilityResult> GetClassAvailabilityAsync(
