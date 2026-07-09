@@ -2,26 +2,11 @@ namespace train_automation;
 
 public partial class Form1 : Form
 {
-    private static readonly string[] DayColumns =
-    [
-        nameof(TrainResult.Monday),
-        nameof(TrainResult.Tuesday),
-        nameof(TrainResult.Wednesday),
-        nameof(TrainResult.Thursday),
-        nameof(TrainResult.Friday),
-        nameof(TrainResult.Saturday),
-        nameof(TrainResult.Sunday)
-    ];
-
-    private static readonly string[] DayNames =
-    [
-        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
-    ];
-
-    private EtrainScraperService? _scraper;
+    private IndianRailScraperService? _scraper;
     private readonly IReadOnlyList<StationInfo> _stations = HardcodedStations.All;
     private TrainSearchSettings? _lastSearchSettings;
     private TrainSelection? _selectedTrain;
+    private TrainListDialog? _trainListDialog;
 
     public Form1()
     {
@@ -33,7 +18,7 @@ public partial class Form1 : Form
     {
         LoadStations();
         ConfigurePassengerGrid();
-        ConfigureTrainListGrid();
+        ConfigureAvailabilityGrids();
         ConfigureDropdowns();
     }
 
@@ -42,7 +27,7 @@ public partial class Form1 : Form
         PopulateStationCombo(fromStationCombo, _stations);
         PopulateStationCombo(toStationCombo, _stations);
         SelectDefaultStation(fromStationCombo, "NDLS", "NEW DELHI");
-        SelectDefaultStation(toStationCombo, "DLI", "DELHI");
+        SelectDefaultStation(toStationCombo, "MMCT", "MUMBAI CENTRAL");
         UpdateTicketName();
     }
 
@@ -62,6 +47,52 @@ public partial class Form1 : Form
 
         backupBankCombo.Items.AddRange(["No Alternate Bank", "PayTM", "PhonePe"]);
         backupBankCombo.SelectedIndex = 0;
+    }
+
+    private void ConfigureAvailabilityGrids()
+    {
+        fareGrid.AutoGenerateColumns = false;
+        fareGrid.Columns.Clear();
+        fareGrid.Rows.Clear();
+        AddFareCol("Base");
+        AddFareCol("Reservation");
+        AddFareCol("Superfast");
+        AddFareCol("Other");
+        AddFareCol("Tatkal");
+        AddFareCol("GST");
+        AddFareCol("Catering");
+        AddFareCol("Dynamic");
+        AddFareCol("Total");
+        fareGrid.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
+            string.Empty, string.Empty, string.Empty);
+
+        availabilityGrid.AutoGenerateColumns = false;
+        availabilityGrid.Columns.Clear();
+        availabilityGrid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "Date",
+            Name = "Date",
+            Width = 110,
+            SortMode = DataGridViewColumnSortMode.NotSortable
+        });
+        availabilityGrid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = "Availability",
+            Name = "Availability",
+            Width = 180,
+            SortMode = DataGridViewColumnSortMode.NotSortable
+        });
+    }
+
+    private void AddFareCol(string header)
+    {
+        fareGrid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = header,
+            Name = header,
+            Width = 75,
+            SortMode = DataGridViewColumnSortMode.NotSortable
+        });
     }
 
     private void ConfigurePassengerGrid()
@@ -121,9 +152,49 @@ public partial class Form1 : Form
         passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior", Name = "Senior", Width = 55 });
         passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed", Name = "Bed", Width = 45 });
 
-        for (var index = 1; index <= 6; index++)
+        UpdatePassengerRowCount(GetPassengerRowLimit());
+    }
+
+    private int GetPassengerRowLimit() =>
+        quotaGeneralRadio.Checked || quotaLadiesRadio.Checked ? 4 : 6;
+
+    private void QuotaRadio_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (sender is RadioButton { Checked: false })
         {
-            passengerGrid.Rows.Add(index, string.Empty, string.Empty, "M", "No Choice", "No Choice", "India-IN", string.Empty, false, false, false);
+            return;
+        }
+
+        UpdatePassengerRowCount(GetPassengerRowLimit());
+    }
+
+    private void UpdatePassengerRowCount(int rowCount)
+    {
+        var existingRows = new List<object[]>();
+        foreach (DataGridViewRow row in passengerGrid.Rows)
+        {
+            if (row.IsNewRow)
+            {
+                continue;
+            }
+
+            existingRows.Add(row.Cells.Cast<DataGridViewCell>().Select(cell => cell.Value ?? string.Empty).ToArray());
+        }
+
+        passengerGrid.Rows.Clear();
+
+        for (var index = 1; index <= rowCount; index++)
+        {
+            if (index <= existingRows.Count)
+            {
+                var saved = existingRows[index - 1];
+                saved[0] = index;
+                passengerGrid.Rows.Add(saved);
+            }
+            else
+            {
+                passengerGrid.Rows.Add(index, string.Empty, string.Empty, "M", "No Choice", "No Choice", "India-IN", string.Empty, false, false, false);
+            }
         }
     }
 
@@ -175,29 +246,35 @@ public partial class Form1 : Form
             FromStationName = fromStation.Name,
             ToStationCode = toStation.Code,
             ToStationName = toStation.Name,
-            TravelDate = travelDatePicker.Value.Date
+            TravelDate = travelDatePicker.Value.Date,
+            Quota = GetIndianRailQuotaCode()
         };
 
         UseWaitCursor = true;
         findButton.Enabled = false;
-        statusLabel.Text = "Searching trains...";
+        statusLabel.Text = "Searching trains on Indian Railways...";
 
         try
         {
-            _scraper ??= new EtrainScraperService();
+            _scraper ??= new IndianRailScraperService
+            {
+                CaptchaProvider = PromptCaptchaAsync,
+                DialogOwner = this
+            };
+            _scraper.DialogOwner = this;
+
             var results = await _scraper.SearchTrainsAsync(settings);
             _lastSearchSettings = settings;
 
             if (results.Count == 0)
             {
-                trainGrid.DataSource = null;
                 MessageBox.Show(this, "No trains found for selected route.", "Train List", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 statusLabel.Text = "No trains found.";
                 return;
             }
 
-            ShowTrainsInParent(results, $"{fromStation.Code} -> {toStation.Code}");
-            statusLabel.Text = $"Found {results.Count} train(s). Click a day column below to select.";
+            ShowTrainListPopup(results, $"{fromStation.Code} -> {toStation.Code}");
+            statusLabel.Text = $"Found {results.Count} train(s). Click a class in the popup.";
         }
         catch (Exception ex)
         {
@@ -211,122 +288,56 @@ public partial class Form1 : Form
         }
     }
 
-    private void ConfigureTrainListGrid()
+    private void ShowTrainListPopup(IReadOnlyList<TrainResult> results, string routeTitle)
     {
-        trainGrid.AutoGenerateColumns = false;
-        trainGrid.Columns.Clear();
-
-        AddTrainCol(nameof(TrainResult.TrainNumber), "No", 65);
-        AddTrainCol(nameof(TrainResult.TrainName), "Train", 120);
-        AddTrainCol(nameof(TrainResult.FromStation), "From", 45);
-        AddTrainCol(nameof(TrainResult.Departure), "Depart", 55);
-        AddTrainCol(nameof(TrainResult.ToStation), "To", 45);
-        AddTrainCol(nameof(TrainResult.Arrival), "Arrival", 55);
-        AddTrainCol(nameof(TrainResult.TravelTime), "Travel", 55);
-        AddTrainCol(nameof(TrainResult.Monday), "M", 28);
-        AddTrainCol(nameof(TrainResult.Tuesday), "T", 28);
-        AddTrainCol(nameof(TrainResult.Wednesday), "W", 28);
-        AddTrainCol(nameof(TrainResult.Thursday), "T", 28);
-        AddTrainCol(nameof(TrainResult.Friday), "F", 28);
-        AddTrainCol(nameof(TrainResult.Saturday), "S", 28);
-        AddTrainCol(nameof(TrainResult.Sunday), "S", 28);
-        AddTrainCol(nameof(TrainResult.AvailableClasses), "Classes", 100);
+        _trainListDialog?.Dispose();
+        _trainListDialog = new TrainListDialog();
+        _trainListDialog.ClassSelected += TrainListDialog_ClassSelected;
+        _trainListDialog.ShowTrains(results, routeTitle);
+        _trainListDialog.Show(this);
     }
 
-    private void AddTrainCol(string property, string header, int width)
+    private async void TrainListDialog_ClassSelected(object? sender, TrainClassSelectedEventArgs e)
     {
-        trainGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = property,
-            HeaderText = header,
-            Width = width,
-            SortMode = DataGridViewColumnSortMode.NotSortable
-        });
-    }
-
-    private void ShowTrainsInParent(IReadOnlyList<TrainResult> results, string routeTitle)
-    {
-        trainListHeader.Text = $"Train List ({routeTitle}) — click a day (M/T/W/T/F/S/S) to select";
-        trainGrid.DataSource = results.ToList();
-        StyleDayCells();
-    }
-
-    private void StyleDayCells()
-    {
-        foreach (DataGridViewRow row in trainGrid.Rows)
-        {
-            if (row.DataBoundItem is not TrainResult)
-            {
-                continue;
-            }
-
-            foreach (var dayColumn in DayColumns)
-            {
-                var column = trainGrid.Columns[dayColumn];
-                if (column is null)
-                {
-                    continue;
-                }
-
-                var cell = row.Cells[column.Index];
-                var runs = cell.Value?.ToString() is "X" or "Y";
-                cell.Style.ForeColor = runs ? Color.DarkGreen : Color.LightGray;
-                cell.Style.Font = runs ? new Font(trainGrid.Font, FontStyle.Bold) : trainGrid.Font;
-            }
-        }
-    }
-
-    private void TrainGrid_CellClick(object? sender, DataGridViewCellEventArgs e)
-    {
-        if (e.RowIndex < 0 || e.ColumnIndex < 0)
+        if (_scraper is null || _lastSearchSettings is null)
         {
             return;
         }
 
-        var column = trainGrid.Columns[e.ColumnIndex];
-        var dayIndex = Array.IndexOf(DayColumns, column.DataPropertyName);
-        if (dayIndex < 0)
+        UseWaitCursor = true;
+        statusLabel.Text = $"Loading {e.TravelClass} availability for train {e.Train.TrainNumber}...";
+
+        try
         {
-            return;
+            var availability = await _scraper.GetClassAvailabilityAsync(
+                GetIndianRailQuotaCode(),
+                e.Train.TrainNumber,
+                e.TravelClass,
+                e.ClassLinkKey);
+            ApplyTrainSelection(e.Train, e.TravelClass);
+            ShowAvailabilityInParent(availability);
+            statusLabel.Text = $"Loaded {e.TravelClass} fare and availability for train {e.Train.TrainNumber}.";
         }
-
-        if (trainGrid.Rows[e.RowIndex].DataBoundItem is not TrainResult train)
+        catch (Exception ex)
         {
-            return;
+            MessageBox.Show(this, ex.Message, "Availability", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            statusLabel.Text = "Availability load failed.";
         }
-
-        var dayValue = column.DataPropertyName switch
+        finally
         {
-            nameof(TrainResult.Monday) => train.Monday,
-            nameof(TrainResult.Tuesday) => train.Tuesday,
-            nameof(TrainResult.Wednesday) => train.Wednesday,
-            nameof(TrainResult.Thursday) => train.Thursday,
-            nameof(TrainResult.Friday) => train.Friday,
-            nameof(TrainResult.Saturday) => train.Saturday,
-            nameof(TrainResult.Sunday) => train.Sunday,
-            _ => string.Empty
-        };
-
-        if (dayValue is not "X" and not "Y")
-        {
-            return;
+            UseWaitCursor = false;
         }
+    }
 
-        var fromCode = GetSelectedStation(fromStationCombo)?.Code ?? boardingPointText.Text;
-        ApplyTrainSelection(new TrainSelection
+    private void ApplyTrainSelection(TrainResult train, string travelClass)
+    {
+        _selectedTrain = new TrainSelection
         {
             Train = train,
-            SelectedDay = DayNames[dayIndex]
-        }, fromCode, GetSelectedStation(toStationCombo)?.Code ?? string.Empty);
+            SelectedDay = string.Empty
+        };
 
-        statusLabel.Text = $"Selected train {train.TrainNumber} for {DayNames[dayIndex]}.";
-    }
-
-    private void ApplyTrainSelection(TrainSelection selection, string fromCode, string toCode)
-    {
-        _selectedTrain = selection;
-        var train = selection.Train;
-
+        var fromCode = GetSelectedStation(fromStationCombo)?.Code ?? boardingPointText.Text;
         boardingPointText.Text = fromCode;
         trainNoText.Text = train.TrainNumber;
         trainTypeCombo.SelectedIndex = 0;
@@ -340,12 +351,72 @@ public partial class Form1 : Form
 
         if (classes.Count == 0)
         {
-            classes.Add("UNRESERVED");
+            classes.Add(travelClass);
         }
 
         classCombo.Items.AddRange(classes.ToArray());
-        classCombo.SelectedIndex = 0;
+        classCombo.SelectedItem = travelClass;
         UpdateTicketName();
+    }
+
+    private void ShowAvailabilityInParent(ClassAvailabilityResult availability)
+    {
+        trainListHeader.Text =
+            $"Fare & Availability — Train {availability.TrainNumber} / {availability.TravelClass} / {availability.TravelDate}";
+
+        if (fareGrid.Rows.Count == 0)
+        {
+            fareGrid.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
+                string.Empty, string.Empty, string.Empty);
+        }
+
+        var fareRow = fareGrid.Rows[0];
+        fareRow.Cells["Base"].Value = availability.BaseFare;
+        fareRow.Cells["Reservation"].Value = availability.ReservationCharges;
+        fareRow.Cells["Superfast"].Value = availability.SuperfastCharges;
+        fareRow.Cells["Other"].Value = availability.OtherCharges;
+        fareRow.Cells["Tatkal"].Value = availability.TatkalCharges;
+        fareRow.Cells["GST"].Value = availability.GoodsServiceTax;
+        fareRow.Cells["Catering"].Value = availability.CateringCharge;
+        fareRow.Cells["Dynamic"].Value = availability.DynamicFare;
+        fareRow.Cells["Total"].Value = availability.TotalFare;
+        fareText.Text = availability.TotalFare;
+
+        availabilityGrid.Rows.Clear();
+        foreach (var day in availability.AvailabilityDays)
+        {
+            availabilityGrid.Rows.Add(day.Date, day.Status);
+        }
+
+        if (availabilityGrid.Rows.Count == 0)
+        {
+            availabilityGrid.Rows.Add(availability.TravelDate, "No availability data returned.");
+        }
+    }
+
+    private Task<string?> PromptCaptchaAsync(IWin32Window? owner, byte[] imageBytes)
+    {
+        var dialogOwner = owner ?? this;
+        if (!InvokeRequired)
+        {
+            using var dialog = new CaptchaDialog(imageBytes);
+            return Task.FromResult(dialog.ShowDialog(dialogOwner) == DialogResult.OK ? dialog.Answer : null);
+        }
+
+        var completion = new TaskCompletionSource<string?>();
+        BeginInvoke(() =>
+        {
+            try
+            {
+                using var dialog = new CaptchaDialog(imageBytes);
+                completion.SetResult(dialog.ShowDialog(dialogOwner) == DialogResult.OK ? dialog.Answer : null);
+            }
+            catch (Exception ex)
+            {
+                completion.SetException(ex);
+            }
+        });
+        return completion.Task;
     }
 
     private void UpdateTicketName()
@@ -362,13 +433,13 @@ public partial class Form1 : Form
     {
         if (_selectedTrain is null)
         {
-            MessageBox.Show(this, "Please find and select a train first.", "Availability", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "Please find a train and click a class first.", "Availability", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         MessageBox.Show(
             this,
-            $"Train: {_selectedTrain.Train.TrainNumber}\nClasses: {_selectedTrain.Train.AvailableClasses}\nDay: {_selectedTrain.SelectedDay}",
+            $"Train: {_selectedTrain.Train.TrainNumber}\nClass: {classCombo.SelectedItem}\nCheck the Fare & Availability panel below.",
             "Availability",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -376,10 +447,15 @@ public partial class Form1 : Form
 
     private void GetFareButton_Click(object? sender, EventArgs e)
     {
+        if (!string.IsNullOrWhiteSpace(fareText.Text) && fareText.Text != "0")
+        {
+            return;
+        }
+
         var passengerCount = GetPassengers().Count;
         if (passengerCount == 0 || _selectedTrain is null)
         {
-            MessageBox.Show(this, "Select a train and enter at least one passenger.", "Get Fare", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Select a train class and enter at least one passenger.", "Get Fare", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -390,7 +466,7 @@ public partial class Form1 : Form
     {
         if (_selectedTrain is null || _lastSearchSettings is null)
         {
-            MessageBox.Show(this, "Please find and select a train first.", "Save", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Please find and select a train class first.", "Save", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -455,6 +531,14 @@ public partial class Form1 : Form
         return "General";
     }
 
+    private string GetIndianRailQuotaCode()
+    {
+        if (quotaLadiesRadio.Checked) return "LD";
+        if (quotaTatkalRadio.Checked) return "TQ";
+        if (quotaPremiumRadio.Checked) return "PT";
+        return "GN";
+    }
+
     private List<PassengerInfo> GetPassengers()
     {
         var passengers = new List<PassengerInfo>();
@@ -508,6 +592,7 @@ public partial class Form1 : Form
 
     protected override async void OnFormClosed(FormClosedEventArgs e)
     {
+        _trainListDialog?.Dispose();
         if (_scraper is not null)
         {
             await _scraper.DisposeAsync();

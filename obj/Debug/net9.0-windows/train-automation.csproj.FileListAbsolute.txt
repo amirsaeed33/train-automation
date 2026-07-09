@@ -107,7 +107,6 @@ D:\train-automation\bin\Debug\net9.0-windows\.playwright\package\types\protocol.
 D:\train-automation\bin\Debug\net9.0-windows\.playwright\package\types\structs.d.ts
 D:\train-automation\bin\Debug\net9.0-windows\.playwright\package\types\types.d.ts
 D:\train-automation\bin\Debug\net9.0-windows\playwright.ps1
-D:\train-automation\bin\Debug\net9.0-windows\train-automation.exe
 D:\train-automation\bin\Debug\net9.0-windows\train-automation.deps.json
 D:\train-automation\bin\Debug\net9.0-windows\train-automation.runtimeconfig.json
 D:\train-automation\bin\Debug\net9.0-windows\train-automation.dll
@@ -258,3 +257,9 @@ E:\Github\train-automation\obj\Debug\net9.0-windows\refint\train-automation.dll
 E:\Github\train-automation\obj\Debug\net9.0-windows\train-automation.pdb
 E:\Github\train-automation\obj\Debug\net9.0-windows\train-automation.genruntimeconfig.cache
 E:\Github\train-automation\obj\Debug\net9.0-windows\ref\train-automation.dll
+D:\train-automation\bin\Debug\net9.0-windows\x86\leptonica-1.82.0.dll
+D:\train-automation\bin\Debug\net9.0-windows\x86\tesseract50.dll
+D:\train-automation\bin\Debug\net9.0-windows\x64\leptonica-1.82.0.dll
+D:\train-automation\bin\Debug\net9.0-windows\x64\tesseract50.dll
+D:\train-automation\bin\Debug\net9.0-windows\Tesseract.dll
+D:\train-automation\bin\Debug\net9.0-windows\train-automation.exe

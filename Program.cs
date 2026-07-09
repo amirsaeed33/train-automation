@@ -1,40 +1,23 @@
-namespace train_automation
+namespace train_automation;
+
+internal static class Program
 {
-    internal static class Program
+    [STAThread]
+    static void Main(string[] args)
     {
-        /// <summary>
-        ///  The main entry point for the application.
-        /// </summary>
-        [STAThread]
-        static void Main(string[] args)
+        if (args.Contains("--smoke-test"))
         {
-            if (args.Contains("--smoke-test"))
-            {
-                RunSmokeTestAsync().GetAwaiter().GetResult();
-                return;
-            }
-
-            ApplicationConfiguration.Initialize();
-            Application.Run(new Form1());
+            RunSmokeTestAsync().GetAwaiter().GetResult();
+            return;
         }
 
-        private static async Task RunSmokeTestAsync()
-        {
-            await using var scraper = new EtrainScraperService();
-            var progress = new Progress<string>(Console.WriteLine);
-            var results = await scraper.SearchTrainsAsync(new TrainSearchSettings
-            {
-                FromStationCode = "NDLS",
-                FromStationName = "NEW DELHI",
-                ToStationCode = "DLI",
-                ToStationName = "DELHI",
-                TravelDate = DateTime.Today.AddDays(1)
-            }, progress);
-            Console.WriteLine($"Total trains: {results.Count}");
-            foreach (var train in results.Take(5))
-            {
-                Console.WriteLine($"{train.TrainNumber} | {train.TrainName} | {train.Departure}-{train.Arrival} | {train.AvailableClasses}");
-            }
-        }
+        ApplicationConfiguration.Initialize();
+        Application.Run(new Form1());
+    }
+
+    private static Task RunSmokeTestAsync()
+    {
+        Console.WriteLine("Smoke test requires captcha in UI. Run the WinForms app and click Find.");
+        return Task.CompletedTask;
     }
 }

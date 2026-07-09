@@ -38,7 +38,8 @@
             quotaTatkalRadio = new RadioButton();
             quotaPremiumRadio = new RadioButton();
             trainListPanel = new Panel();
-            trainGrid = new DataGridView();
+            fareGrid = new DataGridView();
+            availabilityGrid = new DataGridView();
             trainListHeader = new Label();
             passengerGrid = new DataGridView();
             mobileLabel = new Label();
@@ -62,7 +63,8 @@
             statusLabel = new Label();
             titlePanel.SuspendLayout();
             trainListPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)trainGrid).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)fareGrid).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)availabilityGrid).BeginInit();
             ((System.ComponentModel.ISupportInitialize)passengerGrid).BeginInit();
             SuspendLayout();
             // 
@@ -244,6 +246,7 @@
             quotaGeneralRadio.TabStop = true;
             quotaGeneralRadio.Text = "General";
             quotaGeneralRadio.UseVisualStyleBackColor = true;
+            quotaGeneralRadio.CheckedChanged += QuotaRadio_CheckedChanged;
             // 
             // quotaLadiesRadio
             // 
@@ -254,6 +257,7 @@
             quotaLadiesRadio.TabIndex = 18;
             quotaLadiesRadio.Text = "Ladies";
             quotaLadiesRadio.UseVisualStyleBackColor = true;
+            quotaLadiesRadio.CheckedChanged += QuotaRadio_CheckedChanged;
             // 
             // quotaTatkalRadio
             // 
@@ -264,6 +268,7 @@
             quotaTatkalRadio.TabIndex = 19;
             quotaTatkalRadio.Text = "Tatkal";
             quotaTatkalRadio.UseVisualStyleBackColor = true;
+            quotaTatkalRadio.CheckedChanged += QuotaRadio_CheckedChanged;
             // 
             // quotaPremiumRadio
             // 
@@ -274,33 +279,46 @@
             quotaPremiumRadio.TabIndex = 20;
             quotaPremiumRadio.Text = "Premium Tatkal";
             quotaPremiumRadio.UseVisualStyleBackColor = true;
+            quotaPremiumRadio.CheckedChanged += QuotaRadio_CheckedChanged;
             // 
             // trainListPanel
             // 
-            trainListPanel.Controls.Add(trainGrid);
+            trainListPanel.Controls.Add(availabilityGrid);
+            trainListPanel.Controls.Add(fareGrid);
             trainListPanel.Controls.Add(trainListHeader);
             trainListPanel.Location = new Point(10, 142);
             trainListPanel.Name = "trainListPanel";
-            trainListPanel.Size = new Size(710, 220);
+            trainListPanel.Size = new Size(710, 150);
             trainListPanel.TabIndex = 21;
             // 
-            // trainGrid
+            // fareGrid
             // 
-            trainGrid.AllowUserToAddRows = false;
-            trainGrid.AllowUserToDeleteRows = false;
-            trainGrid.BackgroundColor = SystemColors.Window;
-            trainGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            trainGrid.Dock = DockStyle.Fill;
-            trainGrid.Location = new Point(0, 30);
-            trainGrid.MultiSelect = false;
-            trainGrid.Name = "trainGrid";
-            trainGrid.ReadOnly = true;
-            trainGrid.RowHeadersVisible = false;
-            trainGrid.RowHeadersWidth = 51;
-            trainGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
-            trainGrid.Size = new Size(710, 190);
-            trainGrid.TabIndex = 1;
-            trainGrid.CellClick += TrainGrid_CellClick;
+            fareGrid.AllowUserToAddRows = false;
+            fareGrid.AllowUserToDeleteRows = false;
+            fareGrid.BackgroundColor = SystemColors.Window;
+            fareGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            fareGrid.Dock = DockStyle.Top;
+            fareGrid.Location = new Point(0, 30);
+            fareGrid.Name = "fareGrid";
+            fareGrid.ReadOnly = true;
+            fareGrid.RowHeadersVisible = false;
+            fareGrid.RowTemplate.Height = 28;
+            fareGrid.Size = new Size(710, 58);
+            fareGrid.TabIndex = 2;
+            // 
+            // availabilityGrid
+            // 
+            availabilityGrid.AllowUserToAddRows = false;
+            availabilityGrid.AllowUserToDeleteRows = false;
+            availabilityGrid.BackgroundColor = SystemColors.Window;
+            availabilityGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            availabilityGrid.Dock = DockStyle.Fill;
+            availabilityGrid.Location = new Point(0, 88);
+            availabilityGrid.Name = "availabilityGrid";
+            availabilityGrid.ReadOnly = true;
+            availabilityGrid.RowHeadersVisible = false;
+            availabilityGrid.Size = new Size(710, 62);
+            availabilityGrid.TabIndex = 1;
             // 
             // trainListHeader
             // 
@@ -312,12 +330,12 @@
             trainListHeader.Padding = new Padding(8, 6, 8, 6);
             trainListHeader.Size = new Size(710, 30);
             trainListHeader.TabIndex = 0;
-            trainListHeader.Text = "Train List — click a day (M/T/W/T/F/S/S) to select";
+            trainListHeader.Text = "Fare & Availability — select a class from Train List popup";
             // 
             // passengerGrid
             // 
             passengerGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            passengerGrid.Location = new Point(10, 372);
+            passengerGrid.Location = new Point(10, 302);
             passengerGrid.Name = "passengerGrid";
             passengerGrid.RowHeadersVisible = false;
             passengerGrid.RowHeadersWidth = 51;
@@ -327,7 +345,7 @@
             // mobileLabel
             // 
             mobileLabel.AutoSize = true;
-            mobileLabel.Location = new Point(10, 554);
+            mobileLabel.Location = new Point(10, 484);
             mobileLabel.Name = "mobileLabel";
             mobileLabel.Size = new Size(86, 20);
             mobileLabel.TabIndex = 23;
@@ -335,7 +353,7 @@
             // 
             // mobileText
             // 
-            mobileText.Location = new Point(94, 550);
+            mobileText.Location = new Point(94, 480);
             mobileText.MaxLength = 10;
             mobileText.Name = "mobileText";
             mobileText.Size = new Size(120, 27);
@@ -344,7 +362,7 @@
             // fareLabel
             // 
             fareLabel.AutoSize = true;
-            fareLabel.Location = new Point(230, 554);
+            fareLabel.Location = new Point(230, 484);
             fareLabel.Name = "fareLabel";
             fareLabel.Size = new Size(36, 20);
             fareLabel.TabIndex = 25;
@@ -352,7 +370,7 @@
             // 
             // fareText
             // 
-            fareText.Location = new Point(272, 550);
+            fareText.Location = new Point(272, 480);
             fareText.Name = "fareText";
             fareText.ReadOnly = true;
             fareText.Size = new Size(80, 27);
@@ -361,7 +379,7 @@
             // 
             // getFareButton
             // 
-            getFareButton.Location = new Point(360, 548);
+            getFareButton.Location = new Point(360, 478);
             getFareButton.Name = "getFareButton";
             getFareButton.Size = new Size(80, 30);
             getFareButton.TabIndex = 27;
@@ -372,7 +390,7 @@
             // ticketSlotLabel
             // 
             ticketSlotLabel.AutoSize = true;
-            ticketSlotLabel.Location = new Point(10, 588);
+            ticketSlotLabel.Location = new Point(10, 518);
             ticketSlotLabel.Name = "ticketSlotLabel";
             ticketSlotLabel.Size = new Size(78, 20);
             ticketSlotLabel.TabIndex = 28;
@@ -382,7 +400,7 @@
             // 
             ticketSlotCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             ticketSlotCombo.FormattingEnabled = true;
-            ticketSlotCombo.Location = new Point(94, 584);
+            ticketSlotCombo.Location = new Point(94, 514);
             ticketSlotCombo.Name = "ticketSlotCombo";
             ticketSlotCombo.Size = new Size(150, 28);
             ticketSlotCombo.TabIndex = 29;
@@ -390,7 +408,7 @@
             // gatewayLabel
             // 
             gatewayLabel.AutoSize = true;
-            gatewayLabel.Location = new Point(260, 588);
+            gatewayLabel.Location = new Point(260, 518);
             gatewayLabel.Name = "gatewayLabel";
             gatewayLabel.Size = new Size(72, 20);
             gatewayLabel.TabIndex = 30;
@@ -400,7 +418,7 @@
             // 
             gatewayCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             gatewayCombo.FormattingEnabled = true;
-            gatewayCombo.Location = new Point(338, 584);
+            gatewayCombo.Location = new Point(338, 514);
             gatewayCombo.Name = "gatewayCombo";
             gatewayCombo.Size = new Size(170, 28);
             gatewayCombo.TabIndex = 31;
@@ -408,7 +426,7 @@
             // priorBankLabel
             // 
             priorBankLabel.AutoSize = true;
-            priorBankLabel.Location = new Point(10, 622);
+            priorBankLabel.Location = new Point(10, 552);
             priorBankLabel.Name = "priorBankLabel";
             priorBankLabel.Size = new Size(76, 20);
             priorBankLabel.TabIndex = 32;
@@ -418,7 +436,7 @@
             // 
             priorBankCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             priorBankCombo.FormattingEnabled = true;
-            priorBankCombo.Location = new Point(94, 618);
+            priorBankCombo.Location = new Point(94, 548);
             priorBankCombo.Name = "priorBankCombo";
             priorBankCombo.Size = new Size(200, 28);
             priorBankCombo.TabIndex = 33;
@@ -426,7 +444,7 @@
             // backupBankLabel
             // 
             backupBankLabel.AutoSize = true;
-            backupBankLabel.Location = new Point(310, 622);
+            backupBankLabel.Location = new Point(310, 552);
             backupBankLabel.Name = "backupBankLabel";
             backupBankLabel.Size = new Size(95, 20);
             backupBankLabel.TabIndex = 34;
@@ -436,7 +454,7 @@
             // 
             backupBankCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             backupBankCombo.FormattingEnabled = true;
-            backupBankCombo.Location = new Point(408, 618);
+            backupBankCombo.Location = new Point(408, 548);
             backupBankCombo.Name = "backupBankCombo";
             backupBankCombo.Size = new Size(200, 28);
             backupBankCombo.TabIndex = 35;
@@ -446,7 +464,7 @@
             autoUpgradeCheck.AutoSize = true;
             autoUpgradeCheck.Checked = true;
             autoUpgradeCheck.CheckState = CheckState.Checked;
-            autoUpgradeCheck.Location = new Point(10, 656);
+            autoUpgradeCheck.Location = new Point(10, 586);
             autoUpgradeCheck.Name = "autoUpgradeCheck";
             autoUpgradeCheck.Size = new Size(236, 24);
             autoUpgradeCheck.TabIndex = 36;
@@ -458,7 +476,7 @@
             confirmBerthsCheck.AutoSize = true;
             confirmBerthsCheck.Checked = true;
             confirmBerthsCheck.CheckState = CheckState.Checked;
-            confirmBerthsCheck.Location = new Point(250, 656);
+            confirmBerthsCheck.Location = new Point(250, 586);
             confirmBerthsCheck.Name = "confirmBerthsCheck";
             confirmBerthsCheck.Size = new Size(269, 24);
             confirmBerthsCheck.TabIndex = 37;
@@ -468,7 +486,7 @@
             // ticketNameLabel
             // 
             ticketNameLabel.AutoSize = true;
-            ticketNameLabel.Location = new Point(10, 688);
+            ticketNameLabel.Location = new Point(10, 618);
             ticketNameLabel.Name = "ticketNameLabel";
             ticketNameLabel.Size = new Size(52, 20);
             ticketNameLabel.TabIndex = 38;
@@ -476,7 +494,7 @@
             // 
             // ticketNameText
             // 
-            ticketNameText.Location = new Point(68, 684);
+            ticketNameText.Location = new Point(68, 614);
             ticketNameText.Name = "ticketNameText";
             ticketNameText.Size = new Size(180, 27);
             ticketNameText.TabIndex = 39;
@@ -486,7 +504,7 @@
             saveButton.BackColor = Color.DimGray;
             saveButton.FlatStyle = FlatStyle.Flat;
             saveButton.ForeColor = Color.White;
-            saveButton.Location = new Point(600, 680);
+            saveButton.Location = new Point(600, 610);
             saveButton.Name = "saveButton";
             saveButton.Size = new Size(120, 36);
             saveButton.TabIndex = 40;
@@ -498,7 +516,7 @@
             // 
             statusLabel.AutoSize = true;
             statusLabel.ForeColor = Color.DimGray;
-            statusLabel.Location = new Point(260, 688);
+            statusLabel.Location = new Point(260, 618);
             statusLabel.Name = "statusLabel";
             statusLabel.Size = new Size(179, 20);
             statusLabel.TabIndex = 41;
@@ -508,7 +526,7 @@
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(734, 730);
+            ClientSize = new Size(734, 660);
             Controls.Add(statusLabel);
             Controls.Add(saveButton);
             Controls.Add(ticketNameText);
@@ -560,7 +578,8 @@
             titlePanel.ResumeLayout(false);
             titlePanel.PerformLayout();
             trainListPanel.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)trainGrid).EndInit();
+            ((System.ComponentModel.ISupportInitialize)fareGrid).EndInit();
+            ((System.ComponentModel.ISupportInitialize)availabilityGrid).EndInit();
             ((System.ComponentModel.ISupportInitialize)passengerGrid).EndInit();
             ResumeLayout(false);
             PerformLayout();
@@ -590,7 +609,8 @@
         private RadioButton quotaPremiumRadio;
         private Panel trainListPanel;
         private Label trainListHeader;
-        private DataGridView trainGrid;
+        private DataGridView fareGrid;
+        private DataGridView availabilityGrid;
         private DataGridView passengerGrid;
         private Label mobileLabel;
         private TextBox mobileText;

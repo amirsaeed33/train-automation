@@ -8,6 +8,7 @@ public static class HardcodedStations
         new() { Code = "DLI", Name = "DELHI" },
         new() { Code = "CSTM", Name = "Mumbai CST" },
         new() { Code = "BCT", Name = "Mumbai Central" },
+        new() { Code = "MMCT", Name = "MUMBAI CENTRAL" },
         new() { Code = "LTT", Name = "Lokmanya Tilak Terminus" },
         new() { Code = "BDTS", Name = "Bandra Terminus" },
         new() { Code = "HWH", Name = "Howrah" },

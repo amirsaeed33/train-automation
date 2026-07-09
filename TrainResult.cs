@@ -17,4 +17,5 @@ public sealed class TrainResult
     public string Friday { get; init; } = string.Empty;
     public string Saturday { get; init; } = string.Empty;
     public string AvailableClasses { get; init; } = string.Empty;
+    public IReadOnlyDictionary<string, string> ClassLinkKeys { get; init; } = new Dictionary<string, string>();
 }
