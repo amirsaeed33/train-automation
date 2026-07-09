@@ -12,8 +12,8 @@
       }
     ],
     "additionalProbingPaths": [
-      "C:\\Users\\HP\\.dotnet\\store\\|arch|\\|tfm|",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\cursor-sandbox-cache\\1c0da8cb59cf005a402ffce0b8cb5fb0\\nuget",
+      "C:\\Users\\Al hamad\\.dotnet\\store\\|arch|\\|tfm|",
+      "C:\\Users\\Al hamad\\.nuget\\packages",
       "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
     ],
     "configProperties": {

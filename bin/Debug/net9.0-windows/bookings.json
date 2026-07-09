@@ -124,5 +124,43 @@
       "BackupBank": "No Alternate Bank",
       "TicketName": "NDLS_DLI"
     }
+  },
+  {
+    "SavedAt": "2026-07-09T07:39:55.1088908+05:00",
+    "TrainNumber": "19019",
+    "TrainName": "BDTS HW EXP",
+    "TrainType": "Mail/Express-E",
+    "FromStation": "BDTS",
+    "ToStation": "DLI",
+    "BoardingPoint": "BDTS",
+    "TravelClass": "1A",
+    "Quota": "General",
+    "SelectedDay": "Wednesday",
+    "TravelDate": "2026-07-10T00:00:00+05:00",
+    "Mobile": "1515455456",
+    "Fare": "0",
+    "Passengers": [
+      {
+        "Name": "sdddff",
+        "Age": 45,
+        "Gender": "M",
+        "Berth": "No Choice",
+        "Food": "No Choice",
+        "Nationality": "India-IN",
+        "Passport": "",
+        "IsChild": true,
+        "IsSenior": true,
+        "BedRoll": true
+      }
+    ],
+    "Preferences": {
+      "AutoUpgradation": true,
+      "BookOnlyIfConfirmBerths": true,
+      "TicketSlot": "Select_Auto Slot",
+      "Gateway": "Netbanking / Wallet",
+      "PriorBank": "PayTM-QR_paytm@qr",
+      "BackupBank": "No Alternate Bank",
+      "TicketName": "BDTS_DLI"
+    }
   }
 ]

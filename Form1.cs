@@ -216,8 +216,8 @@ public partial class Form1 : Form
         trainGrid.AutoGenerateColumns = false;
         trainGrid.Columns.Clear();
 
-        AddTrainCol(nameof(TrainResult.TrainNumber), "Train No", 65);
-        AddTrainCol(nameof(TrainResult.TrainName), "Train Name", 120);
+        AddTrainCol(nameof(TrainResult.TrainNumber), "No", 65);
+        AddTrainCol(nameof(TrainResult.TrainName), "Train", 120);
         AddTrainCol(nameof(TrainResult.FromStation), "From", 45);
         AddTrainCol(nameof(TrainResult.Departure), "Depart", 55);
         AddTrainCol(nameof(TrainResult.ToStation), "To", 45);

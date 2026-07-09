@@ -38,8 +38,8 @@
             quotaTatkalRadio = new RadioButton();
             quotaPremiumRadio = new RadioButton();
             trainListPanel = new Panel();
-            trainListHeader = new Label();
             trainGrid = new DataGridView();
+            trainListHeader = new Label();
             passengerGrid = new DataGridView();
             mobileLabel = new Label();
             mobileText = new TextBox();
@@ -62,8 +62,8 @@
             statusLabel = new Label();
             titlePanel.SuspendLayout();
             trainListPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)passengerGrid).BeginInit();
             ((System.ComponentModel.ISupportInitialize)trainGrid).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)passengerGrid).BeginInit();
             SuspendLayout();
             // 
             // titlePanel
@@ -82,7 +82,7 @@
             titleLabel.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
             titleLabel.Location = new Point(8, 5);
             titleLabel.Name = "titleLabel";
-            titleLabel.Size = new Size(88, 23);
+            titleLabel.Size = new Size(100, 23);
             titleLabel.TabIndex = 0;
             titleLabel.Text = "New Ticket";
             // 
@@ -91,7 +91,7 @@
             fromLabel.AutoSize = true;
             fromLabel.Location = new Point(10, 42);
             fromLabel.Name = "fromLabel";
-            fromLabel.Size = new Size(44, 20);
+            fromLabel.Size = new Size(43, 20);
             fromLabel.TabIndex = 1;
             fromLabel.Text = "From";
             // 
@@ -102,13 +102,13 @@
             fromStationCombo.FormattingEnabled = true;
             fromStationCombo.Location = new Point(58, 38);
             fromStationCombo.Name = "fromStationCombo";
-            fromStationCombo.Size = new Size(90, 28);
+            fromStationCombo.Size = new Size(142, 28);
             fromStationCombo.TabIndex = 2;
             // 
             // toLabel
             // 
             toLabel.AutoSize = true;
-            toLabel.Location = new Point(158, 42);
+            toLabel.Location = new Point(203, 42);
             toLabel.Name = "toLabel";
             toLabel.Size = new Size(25, 20);
             toLabel.TabIndex = 3;
@@ -119,32 +119,32 @@
             toStationCombo.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
             toStationCombo.AutoCompleteSource = AutoCompleteSource.ListItems;
             toStationCombo.FormattingEnabled = true;
-            toStationCombo.Location = new Point(188, 38);
+            toStationCombo.Location = new Point(233, 38);
             toStationCombo.Name = "toStationCombo";
-            toStationCombo.Size = new Size(90, 28);
+            toStationCombo.Size = new Size(169, 28);
             toStationCombo.TabIndex = 4;
             // 
             // dateLabel
             // 
             dateLabel.AutoSize = true;
-            dateLabel.Location = new Point(288, 42);
+            dateLabel.Location = new Point(402, 42);
             dateLabel.Name = "dateLabel";
-            dateLabel.Size = new Size(42, 20);
+            dateLabel.Size = new Size(41, 20);
             dateLabel.TabIndex = 5;
             dateLabel.Text = "Date";
             // 
             // travelDatePicker
             // 
             travelDatePicker.Format = DateTimePickerFormat.Short;
-            travelDatePicker.Location = new Point(334, 38);
-            travelDatePicker.MinDate = DateTime.Today;
+            travelDatePicker.Location = new Point(448, 38);
+            travelDatePicker.MinDate = new DateTime(2026, 7, 9, 0, 0, 0, 0);
             travelDatePicker.Name = "travelDatePicker";
             travelDatePicker.Size = new Size(120, 27);
             travelDatePicker.TabIndex = 6;
             // 
             // findButton
             // 
-            findButton.Location = new Point(464, 36);
+            findButton.Location = new Point(578, 36);
             findButton.Name = "findButton";
             findButton.Size = new Size(70, 30);
             findButton.TabIndex = 7;
@@ -157,7 +157,7 @@
             bdgPtLabel.AutoSize = true;
             bdgPtLabel.Location = new Point(10, 76);
             bdgPtLabel.Name = "bdgPtLabel";
-            bdgPtLabel.Size = new Size(52, 20);
+            bdgPtLabel.Size = new Size(53, 20);
             bdgPtLabel.TabIndex = 8;
             bdgPtLabel.Text = "Bdg Pt";
             // 
@@ -174,7 +174,7 @@
             trainNoLabel.AutoSize = true;
             trainNoLabel.Location = new Point(158, 76);
             trainNoLabel.Name = "trainNoLabel";
-            trainNoLabel.Size = new Size(67, 20);
+            trainNoLabel.Size = new Size(65, 20);
             trainNoLabel.TabIndex = 10;
             trainNoLabel.Text = "Train No";
             // 
@@ -191,7 +191,7 @@
             trainTypeLabel.AutoSize = true;
             trainTypeLabel.Location = new Point(330, 76);
             trainTypeLabel.Name = "trainTypeLabel";
-            trainTypeLabel.Size = new Size(78, 20);
+            trainTypeLabel.Size = new Size(76, 20);
             trainTypeLabel.TabIndex = 12;
             trainTypeLabel.Text = "Train Type";
             // 
@@ -209,7 +209,7 @@
             availabilityLink.AutoSize = true;
             availabilityLink.Location = new Point(572, 76);
             availabilityLink.Name = "availabilityLink";
-            availabilityLink.Size = new Size(80, 20);
+            availabilityLink.Size = new Size(83, 20);
             availabilityLink.TabIndex = 14;
             availabilityLink.TabStop = true;
             availabilityLink.Text = "Availability";
@@ -220,7 +220,7 @@
             classLabel.AutoSize = true;
             classLabel.Location = new Point(10, 110);
             classLabel.Name = "classLabel";
-            classLabel.Size = new Size(45, 20);
+            classLabel.Size = new Size(42, 20);
             classLabel.TabIndex = 15;
             classLabel.Text = "Class";
             // 
@@ -239,7 +239,7 @@
             quotaGeneralRadio.Checked = true;
             quotaGeneralRadio.Location = new Point(270, 108);
             quotaGeneralRadio.Name = "quotaGeneralRadio";
-            quotaGeneralRadio.Size = new Size(82, 24);
+            quotaGeneralRadio.Size = new Size(81, 24);
             quotaGeneralRadio.TabIndex = 17;
             quotaGeneralRadio.TabStop = true;
             quotaGeneralRadio.Text = "General";
@@ -250,7 +250,7 @@
             quotaLadiesRadio.AutoSize = true;
             quotaLadiesRadio.Location = new Point(360, 108);
             quotaLadiesRadio.Name = "quotaLadiesRadio";
-            quotaLadiesRadio.Size = new Size(71, 24);
+            quotaLadiesRadio.Size = new Size(72, 24);
             quotaLadiesRadio.TabIndex = 18;
             quotaLadiesRadio.Text = "Ladies";
             quotaLadiesRadio.UseVisualStyleBackColor = true;
@@ -270,12 +270,12 @@
             quotaPremiumRadio.AutoSize = true;
             quotaPremiumRadio.Location = new Point(520, 108);
             quotaPremiumRadio.Name = "quotaPremiumRadio";
-            quotaPremiumRadio.Size = new Size(127, 24);
+            quotaPremiumRadio.Size = new Size(131, 24);
             quotaPremiumRadio.TabIndex = 20;
             quotaPremiumRadio.Text = "Premium Tatkal";
             quotaPremiumRadio.UseVisualStyleBackColor = true;
             // 
-            // trainListPanel — TOP after search
+            // trainListPanel
             // 
             trainListPanel.Controls.Add(trainGrid);
             trainListPanel.Controls.Add(trainListHeader);
@@ -283,18 +283,6 @@
             trainListPanel.Name = "trainListPanel";
             trainListPanel.Size = new Size(710, 220);
             trainListPanel.TabIndex = 21;
-            // 
-            // trainListHeader
-            // 
-            trainListHeader.BackColor = Color.FromArgb(180, 160, 220);
-            trainListHeader.Dock = DockStyle.Top;
-            trainListHeader.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            trainListHeader.Location = new Point(0, 0);
-            trainListHeader.Name = "trainListHeader";
-            trainListHeader.Padding = new Padding(8, 6, 8, 6);
-            trainListHeader.Size = new Size(710, 30);
-            trainListHeader.TabIndex = 0;
-            trainListHeader.Text = "Train List — click a day (M/T/W/T/F/S/S) to select";
             // 
             // trainGrid
             // 
@@ -308,17 +296,31 @@
             trainGrid.Name = "trainGrid";
             trainGrid.ReadOnly = true;
             trainGrid.RowHeadersVisible = false;
+            trainGrid.RowHeadersWidth = 51;
             trainGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
             trainGrid.Size = new Size(710, 190);
             trainGrid.TabIndex = 1;
             trainGrid.CellClick += TrainGrid_CellClick;
             // 
-            // passengerGrid — BELOW trains
+            // trainListHeader
+            // 
+            trainListHeader.BackColor = Color.FromArgb(180, 160, 220);
+            trainListHeader.Dock = DockStyle.Top;
+            trainListHeader.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            trainListHeader.Location = new Point(0, 0);
+            trainListHeader.Name = "trainListHeader";
+            trainListHeader.Padding = new Padding(8, 6, 8, 6);
+            trainListHeader.Size = new Size(710, 30);
+            trainListHeader.TabIndex = 0;
+            trainListHeader.Text = "Train List — click a day (M/T/W/T/F/S/S) to select";
+            // 
+            // passengerGrid
             // 
             passengerGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             passengerGrid.Location = new Point(10, 372);
             passengerGrid.Name = "passengerGrid";
             passengerGrid.RowHeadersVisible = false;
+            passengerGrid.RowHeadersWidth = 51;
             passengerGrid.Size = new Size(710, 170);
             passengerGrid.TabIndex = 22;
             // 
@@ -327,7 +329,7 @@
             mobileLabel.AutoSize = true;
             mobileLabel.Location = new Point(10, 554);
             mobileLabel.Name = "mobileLabel";
-            mobileLabel.Size = new Size(78, 20);
+            mobileLabel.Size = new Size(86, 20);
             mobileLabel.TabIndex = 23;
             mobileLabel.Text = "Mobile +91";
             // 
@@ -372,7 +374,7 @@
             ticketSlotLabel.AutoSize = true;
             ticketSlotLabel.Location = new Point(10, 588);
             ticketSlotLabel.Name = "ticketSlotLabel";
-            ticketSlotLabel.Size = new Size(76, 20);
+            ticketSlotLabel.Size = new Size(78, 20);
             ticketSlotLabel.TabIndex = 28;
             ticketSlotLabel.Text = "Ticket Slot";
             // 
@@ -426,7 +428,7 @@
             backupBankLabel.AutoSize = true;
             backupBankLabel.Location = new Point(310, 622);
             backupBankLabel.Name = "backupBankLabel";
-            backupBankLabel.Size = new Size(92, 20);
+            backupBankLabel.Size = new Size(95, 20);
             backupBankLabel.TabIndex = 34;
             backupBankLabel.Text = "BackUp Bank";
             // 
@@ -446,7 +448,7 @@
             autoUpgradeCheck.CheckState = CheckState.Checked;
             autoUpgradeCheck.Location = new Point(10, 656);
             autoUpgradeCheck.Name = "autoUpgradeCheck";
-            autoUpgradeCheck.Size = new Size(220, 24);
+            autoUpgradeCheck.Size = new Size(236, 24);
             autoUpgradeCheck.TabIndex = 36;
             autoUpgradeCheck.Text = "Consider for Auto Upgradation";
             autoUpgradeCheck.UseVisualStyleBackColor = true;
@@ -458,7 +460,7 @@
             confirmBerthsCheck.CheckState = CheckState.Checked;
             confirmBerthsCheck.Location = new Point(250, 656);
             confirmBerthsCheck.Name = "confirmBerthsCheck";
-            confirmBerthsCheck.Size = new Size(260, 24);
+            confirmBerthsCheck.Size = new Size(269, 24);
             confirmBerthsCheck.TabIndex = 37;
             confirmBerthsCheck.Text = "Book only if confirm berths allotted.";
             confirmBerthsCheck.UseVisualStyleBackColor = true;
@@ -498,7 +500,7 @@
             statusLabel.ForeColor = Color.DimGray;
             statusLabel.Location = new Point(260, 688);
             statusLabel.Name = "statusLabel";
-            statusLabel.Size = new Size(180, 20);
+            statusLabel.Size = new Size(179, 20);
             statusLabel.TabIndex = 41;
             statusLabel.Text = "Click Find to search trains.";
             // 
@@ -558,8 +560,8 @@
             titlePanel.ResumeLayout(false);
             titlePanel.PerformLayout();
             trainListPanel.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)passengerGrid).EndInit();
             ((System.ComponentModel.ISupportInitialize)trainGrid).EndInit();
+            ((System.ComponentModel.ISupportInitialize)passengerGrid).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
