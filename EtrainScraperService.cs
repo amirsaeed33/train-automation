@@ -4,6 +4,8 @@ namespace train_automation;
 
 public sealed class EtrainScraperService : IAsyncDisposable
 {
+    private const string EtrainTrainsUrl = "https://etrain.info/trains";
+
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
@@ -26,7 +28,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
         try
         {
             progress?.Report("Opening etrain.info...");
-            await page.GotoAsync(settings.SiteUrl, new PageGotoOptions
+            await page.GotoAsync(EtrainTrainsUrl, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.DOMContentLoaded,
                 Timeout = 90_000
@@ -184,7 +186,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
                 """);
 
             progress?.Report($"Found {results.Length} train(s).");
-            return results.Select(MapResult).ToList();
+            return results.Select(result => MapResult(result, settings)).ToList();
         }
         finally
         {
@@ -192,24 +194,50 @@ public sealed class EtrainScraperService : IAsyncDisposable
         }
     }
 
-    private static TrainResult MapResult(TrainResultDto dto) => new()
+    private static TrainResult MapResult(TrainResultDto dto, TrainSearchSettings settings)
     {
-        TrainNumber = dto.TrainNumber ?? string.Empty,
-        TrainName = dto.TrainName ?? string.Empty,
-        FromStation = dto.FromStation ?? string.Empty,
-        Departure = dto.Departure ?? string.Empty,
-        ToStation = dto.ToStation ?? string.Empty,
-        Arrival = dto.Arrival ?? string.Empty,
-        TravelTime = dto.TravelTime ?? string.Empty,
-        Sunday = dto.Sunday ?? string.Empty,
-        Monday = dto.Monday ?? string.Empty,
-        Tuesday = dto.Tuesday ?? string.Empty,
-        Wednesday = dto.Wednesday ?? string.Empty,
-        Thursday = dto.Thursday ?? string.Empty,
-        Friday = dto.Friday ?? string.Empty,
-        Saturday = dto.Saturday ?? string.Empty,
-        AvailableClasses = dto.AvailableClasses ?? string.Empty
-    };
+        var trainNumber = dto.TrainNumber ?? string.Empty;
+        var availableClasses = dto.AvailableClasses ?? string.Empty;
+
+        return new TrainResult
+        {
+            TrainNumber = trainNumber,
+            TrainName = dto.TrainName ?? string.Empty,
+            FromStation = dto.FromStation ?? string.Empty,
+            Departure = dto.Departure ?? string.Empty,
+            ToStation = dto.ToStation ?? string.Empty,
+            Arrival = dto.Arrival ?? string.Empty,
+            TravelTime = dto.TravelTime ?? string.Empty,
+            Sunday = dto.Sunday ?? string.Empty,
+            Monday = dto.Monday ?? string.Empty,
+            Tuesday = dto.Tuesday ?? string.Empty,
+            Wednesday = dto.Wednesday ?? string.Empty,
+            Thursday = dto.Thursday ?? string.Empty,
+            Friday = dto.Friday ?? string.Empty,
+            Saturday = dto.Saturday ?? string.Empty,
+            AvailableClasses = availableClasses,
+            ClassLinkKeys = CreateClassLinkKeys(trainNumber, availableClasses, settings)
+        };
+    }
+
+    private static IReadOnlyDictionary<string, string> CreateClassLinkKeys(
+        string trainNumber,
+        string availableClasses,
+        TrainSearchSettings settings)
+    {
+        var fromText = $"{settings.FromStationName} - {settings.FromStationCode}";
+        var toText = $"{settings.ToStationName} - {settings.ToStationCode}";
+        var travelDate = settings.TravelDate.ToString("dd-MM-yyyy");
+
+        return availableClasses
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                classCode => classCode,
+                classCode => $"{trainNumber}^{classCode}^{toText}^{fromText}^{travelDate}^",
+                StringComparer.OrdinalIgnoreCase);
+    }
 
     private async Task EnsureBrowserAsync(IProgress<string>? progress = null)
     {

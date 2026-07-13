@@ -264,15 +264,8 @@ public partial class Form1 : Form
                 return;
             }
 
-            statusLabel.Text = "Searching trains on Indian Railways...";
-            _scraper ??= new IndianRailScraperService
-            {
-                CaptchaProvider = PromptCaptchaAsync,
-                DialogOwner = this
-            };
-            _scraper.DialogOwner = this;
-
-            var results = await _scraper.SearchTrainsAsync(settings);
+            statusLabel.Text = "Searching trains...";
+            var results = await SearchTrainsAsync(settings);
             TrainRouteCache.Save(settings, results);
 
             if (results.Count == 0)
@@ -288,13 +281,47 @@ public partial class Form1 : Form
         catch (Exception ex)
         {
             statusLabel.Text = "Search failed.";
-            MessageBox.Show(this, ex.Message, "Search Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, GetFriendlySearchError(ex), "Search Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
             findButton.Enabled = true;
             UseWaitCursor = false;
         }
+    }
+
+    private static async Task<IReadOnlyList<TrainResult>> SearchTrainsAsync(TrainSearchSettings settings)
+    {
+        await using var scraper = new EtrainScraperService();
+        return await scraper.SearchTrainsAsync(settings);
+    }
+
+    private static string GetFriendlySearchError(Exception ex)
+    {
+        var message = ex.Message;
+        if (ex.InnerException is not null)
+        {
+            message = $"{message} {ex.InnerException.Message}";
+        }
+
+        if (message.Contains("ERR_NAME_NOT_RESOLVED", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("net::ERR_", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Could not connect to the train enquiry website. Please check your internet connection and try again.";
+        }
+
+        if (message.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The train search timed out. Please try again.";
+        }
+
+        if (message.Contains("Unexpected response from Indian Railways", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The train enquiry website returned an unexpected response. Please try again.";
+        }
+
+        return ex.Message;
     }
 
     private void ShowTrainListPopup(IReadOnlyList<TrainResult> results, string routeTitle)
@@ -325,17 +352,19 @@ public partial class Form1 : Form
             };
             _scraper.DialogOwner = this;
 
+            var rebuiltSession = false;
             if (!_scraper.HasActiveSessionFor(_lastSearchSettings))
             {
                 statusLabel.Text = "Connecting to Indian Railways (captcha may be required)...";
                 await _scraper.SearchTrainsAsync(_lastSearchSettings);
+                rebuiltSession = true;
             }
 
             var availability = await _scraper.GetClassAvailabilityAsync(
                 GetIndianRailQuotaCode(),
                 e.Train.TrainNumber,
                 e.TravelClass,
-                e.ClassLinkKey);
+                rebuiltSession ? null : e.ClassLinkKey);
             ApplyTrainSelection(e.Train, e.TravelClass);
             ShowAvailabilityInParent(availability);
             statusLabel.Text = $"Loaded {e.TravelClass} fare and availability for train {e.Train.TrainNumber}.";
