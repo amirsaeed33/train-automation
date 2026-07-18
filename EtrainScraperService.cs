@@ -4,8 +4,6 @@ namespace train_automation;
 
 public sealed class EtrainScraperService : IAsyncDisposable
 {
-    private const string EtrainTrainsUrl = "https://etrain.info/trains";
-
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
@@ -19,19 +17,23 @@ public sealed class EtrainScraperService : IAsyncDisposable
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
         {
-            UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            ViewportSize = new ViewportSize { Width = 1280, Height = 900 },
-            Locale = "en-IN"
+            UserAgent = EtrainScraperDefaults.UserAgent,
+            ViewportSize = new ViewportSize
+            {
+                Width = EtrainScraperDefaults.ViewportWidth,
+                Height = EtrainScraperDefaults.ViewportHeight
+            },
+            Locale = EtrainScraperDefaults.Locale
         });
 
         var page = await context.NewPageAsync();
         try
         {
             progress?.Report("Opening etrain.info...");
-            await page.GotoAsync(EtrainTrainsUrl, new PageGotoOptions
+            await page.GotoAsync(EtrainScraperDefaults.TrainsUrl, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.DOMContentLoaded,
-                Timeout = 90_000
+                Timeout = EtrainScraperDefaults.NavigationTimeoutMs
             });
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -40,7 +42,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
             await page.WaitForFunctionAsync(
                 "() => typeof stnname !== 'undefined' && Object.keys(stnname).length > 0",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 90_000 });
+                new PageWaitForFunctionOptions { Timeout = EtrainScraperDefaults.StationDataTimeoutMs });
 
             progress?.Report($"Setting route: {settings.FromStationName} → {settings.ToStationName}...");
             var stationsReady = await page.EvaluateAsync<bool>(
@@ -119,7 +121,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
                 }
                 """,
                 null,
-                new PageWaitForFunctionOptions { Timeout = 90_000 });
+                new PageWaitForFunctionOptions { Timeout = EtrainScraperDefaults.ResultsTimeoutMs });
 
             progress?.Report("Loading train details...");
             try
@@ -127,14 +129,14 @@ public sealed class EtrainScraperService : IAsyncDisposable
                 await page.WaitForResponseAsync(
                     response => response.Url.Contains("ajax.php", StringComparison.OrdinalIgnoreCase)
                         && response.Request.PostData?.Contains("avdata", StringComparison.OrdinalIgnoreCase) == true,
-                    new PageWaitForResponseOptions { Timeout = 8_000 });
+                    new PageWaitForResponseOptions { Timeout = EtrainScraperDefaults.AvailabilityResponseTimeoutMs });
             }
             catch (TimeoutException)
             {
                 // Short/local routes (e.g. NDLS -> DLI) may only list UNRESERVED classes.
             }
 
-            await page.WaitForTimeoutAsync(1000);
+            await page.WaitForTimeoutAsync(EtrainScraperDefaults.PostSearchSettleDelayMs);
 
             var results = await page.EvaluateAsync<TrainResultDto[]>(
                 """
@@ -252,7 +254,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
         {
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true
+                Headless = EtrainScraperDefaults.Headless
             });
         }
         catch (PlaywrightException ex) when (IsMissingBrowserError(ex))
@@ -268,7 +270,7 @@ public sealed class EtrainScraperService : IAsyncDisposable
 
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true
+                Headless = EtrainScraperDefaults.Headless
             });
         }
     }

@@ -227,6 +227,20 @@ public sealed class TrainListDialog : Form
         ClassSelected?.Invoke(this, new TrainClassSelectedEventArgs(train, travelClass, classLinkKey));
     }
 
+    private void InitializeComponent()
+    {
+        SuspendLayout();
+        // 
+        // TrainListDialog
+        // 
+        ClientSize = new Size(282, 253);
+        Name = "TrainListDialog";
+        StartPosition = FormStartPosition.CenterScreen;
+        Text = "Train list";
+        ResumeLayout(false);
+
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
