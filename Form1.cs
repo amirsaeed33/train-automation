@@ -8,13 +8,37 @@ public partial class Form1 : Form
     private readonly IReadOnlyList<StationInfo> _stations = HardcodedStations.All;
     private BookingConfiguration _config = new();
     private BindingList<Passenger> _passengersList = new();
+    private IrctcBookingService? _irctcService;
+    private CancellationTokenSource? _cts;
 
     public Form1()
     {
         InitializeComponent();
         ConfigureGrid();
         ConfigurePassengerGrid();
+        PopulateBookingOptionCombos();
         travelDatePicker.Value = DateTime.Today.AddDays(1);
+    }
+
+    private void PopulateBookingOptionCombos()
+    {
+        quotaCombo.DisplayMember = "Label";
+        quotaCombo.ValueMember = "Code";
+        quotaCombo.DataSource = IrctcQuotaLabels.Options
+            .Select(o => new QuotaItem(o.Code, o.Label))
+            .ToList();
+
+        classCombo.DisplayMember = "Label";
+        classCombo.ValueMember = "Code";
+        classCombo.DataSource = IrctcClassOptions.Options
+            .Select(o => new ClassItem(o.Code, o.Label))
+            .ToList();
+
+        paymentCombo.Items.Clear();
+        foreach (var option in IrctcPaymentOptions.Options)
+        {
+            paymentCombo.Items.Add(option);
+        }
     }
 
     private void ConfigureGrid()
@@ -43,30 +67,36 @@ public partial class Form1 : Form
     {
         passengerGrid.AutoGenerateColumns = false;
         passengerGrid.Columns.Clear();
-        
+
         AddColumn(passengerGrid, nameof(Passenger.Name), "Full Name", 150);
         AddColumn(passengerGrid, nameof(Passenger.Age), "Age", 50);
-        
-        var genderCol = new DataGridViewComboBoxColumn
+
+        passengerGrid.Columns.Add(new DataGridViewComboBoxColumn
         {
             DataPropertyName = nameof(Passenger.Gender),
             HeaderText = "Gender",
             FillWeight = 80,
             DataSource = new[] { "Male", "Female", "Transgender" }
-        };
-        passengerGrid.Columns.Add(genderCol);
-        
-        var berthCol = new DataGridViewComboBoxColumn
+        });
+
+        passengerGrid.Columns.Add(new DataGridViewComboBoxColumn
         {
             DataPropertyName = nameof(Passenger.BerthPreference),
             HeaderText = "Berth Preference",
             FillWeight = 100,
             DataSource = new[] { "No Preference", "Lower", "Middle", "Upper", "Side Lower", "Side Upper", "Window" }
-        };
-        passengerGrid.Columns.Add(berthCol);
+        });
+
+        passengerGrid.Columns.Add(new DataGridViewComboBoxColumn
+        {
+            DataPropertyName = nameof(Passenger.FoodPreference),
+            HeaderText = "Food",
+            FillWeight = 90,
+            DataSource = new[] { "No Preference", "Veg", "Non Veg" }
+        });
     }
 
-    private void AddColumn(DataGridView grid, string propertyName, string headerText, int fillWeight)
+    private static void AddColumn(DataGridView grid, string propertyName, string headerText, int fillWeight)
     {
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -79,16 +109,68 @@ public partial class Form1 : Form
     private void Form1_Load(object sender, EventArgs e)
     {
         LoadStations();
-        
-        // Load Configuration
+
         _config = BookingConfiguration.Load();
-        
-        // Bind UI
+        ApplyConfigToUi();
+
+        statusLabel.Text = "Ready. Set class/quota, passengers & settings, then search and book.";
+    }
+
+    private void ApplyConfigToUi()
+    {
         usernameText.Text = _config.Credentials.Username;
         passwordText.Text = _config.Credentials.Password;
-        
+        mobileText.Text = _config.MobileNumber;
+        scheduleTimeText.Text = _config.ScheduledSearchTime;
+        confirmBerthsCheck.Checked = _config.ConfirmBerthsOnly;
+        autoUpgradeCheck.Checked = _config.AutoUpgrade;
+
+        refreshIntervalNumeric.Value = Clamp(
+            _config.RefreshIntervalMs,
+            (int)refreshIntervalNumeric.Minimum,
+            (int)refreshIntervalNumeric.Maximum);
+
+        availabilityTimeoutNumeric.Value = Clamp(
+            _config.AvailabilityTimeoutSeconds,
+            (int)availabilityTimeoutNumeric.Minimum,
+            (int)availabilityTimeoutNumeric.Maximum);
+
+        SelectComboByCode(quotaCombo, _config.Quota);
+        SelectComboByCode(classCombo, _config.PreferredClass);
+
+        var paymentIndex = paymentCombo.Items.IndexOf(_config.PaymentMethod);
+        paymentCombo.SelectedIndex = paymentIndex >= 0 ? paymentIndex : 0;
+
         _passengersList = new BindingList<Passenger>(_config.Passengers);
         passengerGrid.DataSource = _passengersList;
+    }
+
+    private static int Clamp(int value, int min, int max) =>
+        value < min ? min : value > max ? max : value;
+
+    private static void SelectComboByCode(ComboBox combo, string code)
+    {
+        for (var i = 0; i < combo.Items.Count; i++)
+        {
+            var item = combo.Items[i];
+            var itemCode = item switch
+            {
+                QuotaItem q => q.Code,
+                ClassItem c => c.Code,
+                _ => item?.ToString()
+            };
+
+            if (string.Equals(itemCode, code, StringComparison.OrdinalIgnoreCase))
+            {
+                combo.SelectedIndex = i;
+                return;
+            }
+        }
+
+        if (combo.Items.Count > 0)
+        {
+            combo.SelectedIndex = 0;
+        }
     }
 
     private void LoadStations()
@@ -97,9 +179,7 @@ public partial class Form1 : Form
         PopulateStationCombo(toStationCombo, _stations);
 
         SelectDefaultStation(fromStationCombo, "NDLS", "NEW DELHI");
-        SelectDefaultStation(toStationCombo, "PNBE", "PATNA JN");
-
-        statusLabel.Text = "Ready. Configure passengers and settings, then search.";
+        SelectDefaultStation(toStationCombo, "PNBE", "PATNA");
     }
 
     private static void PopulateStationCombo(ComboBox comboBox, IReadOnlyList<StationInfo> stations)
@@ -131,26 +211,37 @@ public partial class Form1 : Form
 
     private void SaveConfig()
     {
-        _config.Credentials.Username = usernameText.Text;
+        passengerGrid.EndEdit();
+
+        _config.Credentials.Username = usernameText.Text.Trim();
         _config.Credentials.Password = passwordText.Text;
         _config.Passengers = _passengersList.ToList();
+        _config.MobileNumber = mobileText.Text.Trim();
+        _config.ConfirmBerthsOnly = confirmBerthsCheck.Checked;
+        _config.AutoUpgrade = autoUpgradeCheck.Checked;
+        _config.RefreshIntervalMs = (int)refreshIntervalNumeric.Value;
+        _config.AvailabilityTimeoutSeconds = (int)availabilityTimeoutNumeric.Value;
+        _config.ScheduledSearchTime = scheduleTimeText.Text.Trim();
+        _config.Quota = GetSelectedQuotaCode();
+        _config.PreferredClass = GetSelectedClassCode();
+        _config.PaymentMethod = paymentCombo.SelectedItem?.ToString() ?? "BHIM/UPI";
         _config.Save();
         statusLabel.Text = "Settings saved.";
     }
 
-    private void SaveSettingsButton_Click(object sender, EventArgs e)
-    {
-        SaveConfig();
-    }
-    
-    private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-    {
-        SaveConfig();
-    }
+    private string GetSelectedQuotaCode() =>
+        quotaCombo.SelectedItem is QuotaItem item ? item.Code : "GN";
+
+    private string GetSelectedClassCode() =>
+        classCombo.SelectedItem is ClassItem item ? item.Code : "SL";
+
+    private void SaveSettingsButton_Click(object sender, EventArgs e) => SaveConfig();
+
+    private void Form1_FormClosing(object sender, FormClosingEventArgs e) => SaveConfig();
 
     private async void SearchButton_Click(object sender, EventArgs e)
     {
-        SaveConfig(); // Save configuration implicitly on search
+        SaveConfig();
 
         var fromStation = GetSelectedStation(fromStationCombo);
         if (fromStation is null)
@@ -172,15 +263,19 @@ public partial class Form1 : Form
             return;
         }
 
-        await RunSearchAsync(new TrainSearchSettings
-        {
-            FromStationCode = fromStation.Code,
-            FromStationName = fromStation.Name,
-            ToStationCode = toStation.Code,
-            ToStationName = toStation.Name,
-            TravelDate = travelDatePicker.Value.Date
-        });
+        await RunSearchAsync(BuildSearchSettings(fromStation, toStation));
     }
+
+    private TrainSearchSettings BuildSearchSettings(StationInfo fromStation, StationInfo toStation) => new()
+    {
+        FromStationCode = fromStation.Code,
+        FromStationName = fromStation.Name,
+        ToStationCode = toStation.Code,
+        ToStationName = toStation.Name,
+        TravelDate = travelDatePicker.Value.Date,
+        Quota = GetSelectedQuotaCode(),
+        PreferredClass = GetSelectedClassCode()
+    };
 
     private async Task RunSearchAsync(TrainSearchSettings settings)
     {
@@ -203,17 +298,12 @@ public partial class Form1 : Form
 
             trainGrid.DataSource = results;
             statusLabel.Text =
-                $"Showing {results.Count} train(s): {settings.FromStationName} → {settings.ToStationName} on {settings.TravelDate:dd-MMM-yyyy}";
+                $"Showing {results.Count} train(s): {settings.FromStationName} → {settings.ToStationName} on {settings.TravelDate:dd-MMM-yyyy} [{settings.Quota}/{settings.PreferredClass}]";
         }
         catch (Exception ex)
         {
             statusLabel.Text = $"Search failed: {ex.Message}";
-            MessageBox.Show(
-                this,
-                ex.Message,
-                "Train Search Failed",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, "Train Search Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -243,9 +333,6 @@ public partial class Form1 : Form
                 station.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
     }
 
-    private IrctcBookingService? _irctcService;
-    private CancellationTokenSource? _cts;
-
     private async void BookIrctcButton_Click(object sender, EventArgs e)
     {
         SaveConfig();
@@ -257,30 +344,34 @@ public partial class Form1 : Form
         }
 
         var selectedTrain = trainGrid.SelectedRows[0].DataBoundItem as TrainResult;
-        if (selectedTrain == null) return;
+        if (selectedTrain is null)
+        {
+            return;
+        }
 
-        if (string.IsNullOrWhiteSpace(_config.Credentials.Username) || string.IsNullOrWhiteSpace(_config.Credentials.Password))
+        if (string.IsNullOrWhiteSpace(_config.Credentials.Username) ||
+            string.IsNullOrWhiteSpace(_config.Credentials.Password))
         {
             MessageBox.Show(this, "Please configure IRCTC username and password in the Settings tab.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        if (_config.Passengers.Count == 0)
+        if (_config.Passengers.Count == 0 || _config.Passengers.All(p => string.IsNullOrWhiteSpace(p.Name)))
         {
             MessageBox.Show(this, "Please add at least one passenger in the Passengers tab.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        var settings = new TrainSearchSettings
+        var fromStation = GetSelectedStation(fromStationCombo);
+        var toStation = GetSelectedStation(toStationCombo);
+        if (fromStation is null || toStation is null)
         {
-            FromStationCode = GetSelectedStation(fromStationCombo)?.Code ?? "",
-            FromStationName = GetSelectedStation(fromStationCombo)?.Name ?? "",
-            ToStationCode = GetSelectedStation(toStationCombo)?.Code ?? "",
-            ToStationName = GetSelectedStation(toStationCombo)?.Name ?? "",
-            TravelDate = travelDatePicker.Value.Date
-        };
+            MessageBox.Show(this, "Please select valid From and To stations.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
 
-        // Lock UI and activate Stop button
+        var settings = BuildSearchSettings(fromStation, toStation);
+
         bookIrctcButton.Enabled = false;
         searchButton.Enabled = false;
         stopButton.Enabled = true;
@@ -291,17 +382,20 @@ public partial class Form1 : Form
 
         var progress = new Progress<string>(message =>
         {
-            if (IsHandleCreated) statusLabel.Text = message;
+            if (IsHandleCreated)
+            {
+                statusLabel.Text = message;
+            }
         });
 
         try
         {
-            // Dispose old service so browser is fresh each run
             if (_irctcService is not null)
             {
                 await _irctcService.DisposeAsync();
                 _irctcService = null;
             }
+
             _irctcService = new IrctcBookingService();
             await _irctcService.BookTrainAsync(settings, selectedTrain, _config, progress, _cts.Token);
         }
@@ -315,7 +409,6 @@ public partial class Form1 : Form
         }
         finally
         {
-            // ALWAYS re-enable UI no matter what happened
             bookIrctcButton.Enabled = true;
             searchButton.Enabled = true;
             stopButton.Enabled = false;
@@ -338,7 +431,7 @@ public partial class Form1 : Form
             await _scraper.DisposeAsync();
             _scraper = null;
         }
-        
+
         if (_irctcService is not null)
         {
             await _irctcService.DisposeAsync();
@@ -347,4 +440,7 @@ public partial class Form1 : Form
 
         base.OnFormClosed(e);
     }
+
+    private sealed record QuotaItem(string Code, string Label);
+    private sealed record ClassItem(string Code, string Label);
 }

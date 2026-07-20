@@ -10,7 +10,7 @@
         "projectUniqueName": "D:\\github\\train-automation-desktop\\train-automation.csproj",
         "projectName": "train-automation",
         "projectPath": "D:\\github\\train-automation-desktop\\train-automation.csproj",
-        "packagesPath": "C:\\Users\\Lenovo\\.nuget\\packages\\",
+        "packagesPath": "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget",
         "outputPath": "D:\\github\\train-automation-desktop\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
@@ -51,6 +51,10 @@
             "Microsoft.Playwright": {
               "target": "Package",
               "version": "[1.61.0, )"
+            },
+            "System.Security.Cryptography.ProtectedData": {
+              "target": "Package",
+              "version": "[9.0.0, )"
             }
           },
           "imports": [
