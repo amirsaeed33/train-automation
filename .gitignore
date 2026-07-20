@@ -1,0 +1,34 @@
+# .NET Core
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.log
+*.sqlite
+.idea/
+
+# Playwright
+.playwright/
+playwright-log.txt
+playwright.config.js
+test-results/
+
+# Release builds (too large for GitHub)
+ReleaseBuild/
+*.exe
+
+# Screenshots saved by the bot
+payment_qr.png
+ticket.png
+
+# User config (contains passwords)
+config.json
+
+# OS Files
+.DS_Store
+Thumbs.db
