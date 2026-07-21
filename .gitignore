@@ -1,8 +1,35 @@
-﻿################################################################################
-# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
-################################################################################
+# .NET Core
+bin/
+obj/
 
-/.vs/train-automation
-/bin/Debug/net9.0-windows
-/obj/Debug/net9.0-windows/train_automation.CaptchaDialog.resources
-*.resources
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.log
+*.sqlite
+.idea/
+
+# Playwright
+.playwright/
+playwright-log.txt
+playwright.config.js
+test-results/
+
+# Release builds (too large for GitHub)
+ReleaseBuild/
+*.exe
+
+# Screenshots saved by the bot
+payment_qr.png
+ticket.png
+
+# User config (contains passwords)
+config.json
+
+# OS Files
+.DS_Store
+Thumbs.db

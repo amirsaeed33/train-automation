@@ -1,0 +1,163 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace train_automation;
+
+public sealed class BookingConfiguration
+{
+    public IrctcCredentials Credentials { get; set; } = new();
+    public List<Passenger> Passengers { get; set; } = new();
+
+    /// <summary>Preferred coach class code, e.g. SL, 3A, 2A, CC, 2S.</summary>
+    public string PreferredClass { get; set; } = "SL";
+
+    /// <summary>IRCTC quota: GN, TQ, LD, SS, PT.</summary>
+    public string Quota { get; set; } = "GN";
+
+    /// <summary>Payment label text matched on IRCTC, e.g. BHIM/UPI.</summary>
+    public string PaymentMethod { get; set; } = "BHIM/UPI";
+
+    public string MobileNumber { get; set; } = string.Empty;
+    public bool ConfirmBerthsOnly { get; set; }
+    public bool AutoUpgrade { get; set; }
+
+    /// <summary>Milliseconds between availability refresh attempts.</summary>
+    public int RefreshIntervalMs { get; set; } = 1500;
+
+    /// <summary>Max seconds to keep refreshing for availability (Tatkal).</summary>
+    public int AvailabilityTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// If set (HH:mm:ss local), wait until that clock time before clicking Search on IRCTC.
+    /// Empty = search immediately.
+    /// </summary>
+    public string ScheduledSearchTime { get; set; } = string.Empty;
+
+    private static readonly string ConfigFilePath =
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    public static BookingConfiguration Load()
+    {
+        try
+        {
+            if (File.Exists(ConfigFilePath))
+            {
+                var json = File.ReadAllText(ConfigFilePath);
+                var config = JsonSerializer.Deserialize<BookingConfiguration>(json, JsonOptions);
+                if (config != null)
+                {
+                    config.Credentials.Password = CredentialProtector.Unprotect(config.Credentials.Password);
+                    return config;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore load errors and return default
+        }
+
+        return new BookingConfiguration();
+    }
+
+    public void Save()
+    {
+        try
+        {
+            var toSave = new BookingConfiguration
+            {
+                Credentials = new IrctcCredentials
+                {
+                    Username = Credentials.Username,
+                    Password = CredentialProtector.Protect(Credentials.Password)
+                },
+                Passengers = Passengers.Select(p => new Passenger
+                {
+                    Name = p.Name,
+                    Age = p.Age,
+                    Gender = p.Gender,
+                    BerthPreference = p.BerthPreference,
+                    FoodPreference = p.FoodPreference
+                }).ToList(),
+                PreferredClass = PreferredClass,
+                Quota = Quota,
+                PaymentMethod = PaymentMethod,
+                MobileNumber = MobileNumber,
+                ConfirmBerthsOnly = ConfirmBerthsOnly,
+                AutoUpgrade = AutoUpgrade,
+                RefreshIntervalMs = RefreshIntervalMs,
+                AvailabilityTimeoutSeconds = AvailabilityTimeoutSeconds,
+                ScheduledSearchTime = ScheduledSearchTime
+            };
+
+            var json = JsonSerializer.Serialize(toSave, JsonOptions);
+            File.WriteAllText(ConfigFilePath, json);
+        }
+        catch
+        {
+            // Ignore save errors
+        }
+    }
+}
+
+/// <summary>Protects secrets at rest with Windows DPAPI (CurrentUser).</summary>
+internal static class CredentialProtector
+{
+    private const string Prefix = "dpapi:";
+
+    public static string Protect(string plainText)
+    {
+        if (string.IsNullOrEmpty(plainText))
+        {
+            return string.Empty;
+        }
+
+        if (plainText.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return plainText;
+        }
+
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(plainText);
+            var protectedBytes = ProtectedData.Protect(bytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
+            return Prefix + Convert.ToBase64String(protectedBytes);
+        }
+        catch
+        {
+            return plainText;
+        }
+    }
+
+    public static string Unprotect(string stored)
+    {
+        if (string.IsNullOrEmpty(stored))
+        {
+            return string.Empty;
+        }
+
+        if (!stored.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            // Legacy plaintext config — leave as-is until next save
+            return stored;
+        }
+
+        try
+        {
+            var protectedBytes = Convert.FromBase64String(stored[Prefix.Length..]);
+            var bytes = ProtectedData.Unprotect(protectedBytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(bytes);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+}

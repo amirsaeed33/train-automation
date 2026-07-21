@@ -1,19 +1,20 @@
 {
   "version": 2,
-  "dgSpecHash": "zYFBRgzyZyk=",
+  "dgSpecHash": "2XJz7FCwurI=",
   "success": true,
-  "projectFilePath": "D:\\train-automation\\train-automation.csproj",
+  "projectFilePath": "D:\\github\\train-automation-desktop\\train-automation.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\HP\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\6.0.0\\microsoft.bcl.asyncinterfaces.6.0.0.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\microsoft.playwright\\1.61.0\\microsoft.playwright.1.61.0.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\system.componentmodel.annotations\\5.0.0\\system.componentmodel.annotations.5.0.0.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\system.text.encodings.web\\6.0.0\\system.text.encodings.web.6.0.0.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\system.text.json\\6.0.10\\system.text.json.6.0.10.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\9.0.13\\microsoft.windowsdesktop.app.ref.9.0.13.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\microsoft.netcore.app.ref\\9.0.13\\microsoft.netcore.app.ref.9.0.13.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\9.0.13\\microsoft.aspnetcore.app.ref.9.0.13.nupkg.sha512",
-    "C:\\Users\\HP\\.nuget\\packages\\microsoft.netcore.app.host.win-x64\\9.0.13\\microsoft.netcore.app.host.win-x64.9.0.13.nupkg.sha512"
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\microsoft.bcl.asyncinterfaces\\6.0.0\\microsoft.bcl.asyncinterfaces.6.0.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\microsoft.playwright\\1.61.0\\microsoft.playwright.1.61.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\system.componentmodel.annotations\\5.0.0\\system.componentmodel.annotations.5.0.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\system.security.cryptography.protecteddata\\9.0.0\\system.security.cryptography.protecteddata.9.0.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\system.text.encodings.web\\6.0.0\\system.text.encodings.web.6.0.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\system.text.json\\6.0.10\\system.text.json.6.0.10.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\microsoft.netcore.app.ref\\9.0.18\\microsoft.netcore.app.ref.9.0.18.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\microsoft.windowsdesktop.app.ref\\9.0.18\\microsoft.windowsdesktop.app.ref.9.0.18.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\microsoft.aspnetcore.app.ref\\9.0.18\\microsoft.aspnetcore.app.ref.9.0.18.nupkg.sha512",
+    "C:\\Users\\Lenovo\\AppData\\Local\\Temp\\cursor-sandbox-cache\\605d663b4b2b2a9f56f8b82900dac705\\nuget\\microsoft.netcore.app.host.win-x64\\9.0.18\\microsoft.netcore.app.host.win-x64.9.0.18.nupkg.sha512"
   ],
   "logs": []
 }
