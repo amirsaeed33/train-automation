@@ -22,7 +22,7 @@ public static class HardcodedStations
         new() { Code = "MAS", Name = "Chennai Central" },
         new() { Code = "SBC", Name = "Bangalore City" },
         new() { Code = "HYB", Name = "Hyderabad" },
-        new() { Code = "PNBE", Name = "Patna" },
+        new() { Code = "PNBE", Name = "PATNA JN" },
         new() { Code = "LKO", Name = "Lucknow" },
         new() { Code = "JP", Name = "Jaipur" },
         new() { Code = "ADI", Name = "Ahmedabad" },

@@ -408,61 +408,87 @@ public sealed class IrctcBookingService : IAsyncDisposable
         await page.WaitForTimeoutAsync(800);
 
         // IRCTC lazy-loads cards — scroll so more trains appear before matching
-        await page.EvaluateAsync("""
-            async () => {
-                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-                const scroller = document.querySelector('.tnc') || document.scrollingElement || document.body;
-                for (let i = 0; i < 6; i++) {
-                    window.scrollBy(0, Math.floor(window.innerHeight * 0.85));
-                    if (scroller && scroller !== document.body) scroller.scrollTop += 600;
-                    await sleep(350);
-                }
-                window.scrollTo(0, 0);
-                await sleep(300);
-            }
-            """);
+        for (var scrollPass = 0; scrollPass < 6; scrollPass++)
+        {
+            await page.EvaluateAsync("() => window.scrollBy(0, Math.floor(window.innerHeight * 0.85))");
+            await page.WaitForTimeoutAsync(350);
+        }
 
-        var found = await page.EvaluateAsync<TrainFindResult>("""
+        await page.EvaluateAsync("() => window.scrollTo(0, 0)");
+        await page.WaitForTimeoutAsync(400);
+
+        // Return JSON string — Playwright's typed EvaluateAsync can NRE on custom POCOs
+        var foundJson = await page.EvaluateAsync<string>("""
             (trainNum) => {
-                const headings = [...document.querySelectorAll('app-train-avl-enq .train-heading, .train-heading')];
+                const headings = Array.from(document.querySelectorAll('app-train-avl-enq .train-heading, .train-heading'));
                 const visible = [];
                 const pushVisible = (text) => {
-                    const matches = text.matchAll(/\((\d{3,5})\)/g);
-                    for (const m of matches) visible.push(m[1]);
+                    if (!text) return;
+                    const reParen = /\((\d{3,5})\)/g;
+                    let m;
+                    while ((m = reParen.exec(text)) !== null) {
+                        visible.push(m[1]);
+                    }
                     const bare = text.match(/\b(\d{5})\b/g);
-                    if (bare) bare.forEach(n => visible.push(n));
+                    if (bare) {
+                        for (let i = 0; i < bare.length; i++) visible.push(bare[i]);
+                    }
                 };
 
-                for (const h of headings) {
+                for (let i = 0; i < headings.length; i++) {
+                    const h = headings[i];
                     const text = (h.textContent || '').replace(/\s+/g, ' ').trim();
                     pushVisible(text);
                     const digits = text.replace(/\D/g, '');
-                    if (digits.includes(trainNum) || text.includes(trainNum) || text.includes('(' + trainNum + ')')) {
+                    if (digits.indexOf(trainNum) >= 0 || text.indexOf(trainNum) >= 0 || text.indexOf('(' + trainNum + ')') >= 0) {
                         const root = h.closest('app-train-avl-enq') || h.closest('.bull-back') || h.parentElement;
                         if (root) {
                             root.scrollIntoView({ block: 'center', behavior: 'instant' });
-                            return { ok: true, heading: text.slice(0, 80), visible: [] };
+                            return JSON.stringify({ ok: true, heading: text.slice(0, 80), visible: [] });
                         }
                     }
                 }
 
-                for (const el of document.querySelectorAll('app-train-avl-enq')) {
+                const cards = Array.from(document.querySelectorAll('app-train-avl-enq'));
+                for (let i = 0; i < cards.length; i++) {
+                    const el = cards[i];
                     const t = (el.textContent || '');
                     pushVisible(t);
                     const digitTokens = t.replace(/\D/g, ' ').split(/\s+/).filter(Boolean);
-                    if (t.includes('(' + trainNum + ')') ||
+                    if (t.indexOf('(' + trainNum + ')') >= 0 ||
                         new RegExp('(?:^|\\D)' + trainNum + '(?:\\D|$)').test(t) ||
-                        digitTokens.includes(trainNum)) {
+                        digitTokens.indexOf(trainNum) >= 0) {
                         el.scrollIntoView({ block: 'center', behavior: 'instant' });
-                        return { ok: true, heading: 'fallback-root', visible: [] };
+                        return JSON.stringify({ ok: true, heading: 'fallback-root', visible: [] });
                     }
                 }
 
-                // Last resort: full page body may list "NAME (12345)"
-                pushVisible(document.body?.innerText || '');
-                return { ok: false, heading: '', visible: [...new Set(visible)].slice(0, 25) };
+                pushVisible((document.body && document.body.innerText) ? document.body.innerText : '');
+                const unique = [];
+                const seen = {};
+                for (let i = 0; i < visible.length && unique.length < 25; i++) {
+                    const v = visible[i];
+                    if (v && !seen[v]) {
+                        seen[v] = true;
+                        unique.push(v);
+                    }
+                }
+                return JSON.stringify({ ok: false, heading: '', visible: unique });
             }
             """, trainNum);
+
+        TrainFindResult? found = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(foundJson))
+            {
+                found = System.Text.Json.JsonSerializer.Deserialize<TrainFindResult>(foundJson);
+            }
+        }
+        catch
+        {
+            found = null;
+        }
 
         if (found is null || !found.Ok)
         {
@@ -517,163 +543,19 @@ public sealed class IrctcBookingService : IAsyncDisposable
             await page.WaitForTimeoutAsync(2500);
         }
 
-        await page.WaitForTimeoutAsync(800);
+        await page.WaitForTimeoutAsync(600);
+        progress?.Report($"Selecting travel date ({dateHint}) then Book Now (main-style)...");
 
-        var deadline = DateTime.UtcNow.AddSeconds(Math.Max(45, config.AvailabilityTimeoutSeconds));
+        // Same approach as main: Playwright clicks date card (Angular-safe), wait, Book Now once.
+        // Do NOT match bare day numbers (e.g. "22" hits "WL22" on another date).
+        var deadline = DateTime.UtcNow.AddSeconds(Math.Max(60, config.AvailabilityTimeoutSeconds));
         var refreshMs = Math.Max(800, config.RefreshIntervalMs);
         var attempt = 0;
-        var warnedConfirm = false;
 
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
             attempt++;
-
-            var result = await page.EvaluateAsync<BookAttemptResult>("""
-                ({ trainNum, dateDay, dateMonth, dateHint, confirmOnly }) => {
-                    const roots = [...document.querySelectorAll('app-train-avl-enq')];
-                    let target = roots.find(el => {
-                        const t = el.textContent || '';
-                        return t.includes(trainNum) || t.replace(/\D/g, ' ').split(/\s+/).includes(trainNum);
-                    });
-                    if (!target) {
-                        return { ok: false, reason: 'train-not-found' };
-                    }
-
-                    let cards = [...target.querySelectorAll('.pre-avl')].filter(el => {
-                        const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
-                        if (/REGRET/i.test(t)) return false;
-                        const hasDate = /\d{1,2}\s*,?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(t);
-                        const hasStatus = /AVAILABLE|RAC|\bWL\s*\d*|WAITING/i.test(t);
-                        if (!hasDate || !hasStatus) return false;
-                        return true;
-                    });
-
-                    const availableCards = cards.filter(el => /AVAILABLE/i.test(el.textContent || ''));
-                    if (confirmOnly) {
-                        if (!availableCards.length) {
-                            return { ok: false, reason: 'no-confirm-berth' };
-                        }
-                        cards = availableCards;
-                    }
-                    if (!cards.length) return { ok: false, reason: 'no-date-card' };
-
-                    let chosen = cards.find(el => {
-                        const t = el.textContent || '';
-                        return t.includes(dateHint) || (t.includes(dateDay) && new RegExp(dateMonth, 'i').test(t));
-                    }) || null;
-                    if (!chosen) chosen = availableCards[0] || cards[0];
-                    chosen.scrollIntoView({ block: 'center' });
-                    chosen.click();
-                    return { ok: false, reason: 'date-selected' };
-                }
-                """, new
-            {
-                trainNum,
-                dateDay,
-                dateMonth,
-                dateHint,
-                confirmOnly = config.ConfirmBerthsOnly
-            });
-
-            if (string.Equals(result?.Reason, "no-confirm-berth", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!warnedConfirm)
-                {
-                    progress?.Report(
-                        "No AVAILABLE seats (only WL/RAC). Uncheck 'Book only if confirm berths' to book waitlist, or pick another class.");
-                    warnedConfirm = true;
-                }
-
-                if (attempt >= 3)
-                {
-                    return false;
-                }
-            }
-            else if (string.Equals(result?.Reason, "date-selected", StringComparison.OrdinalIgnoreCase))
-            {
-                progress?.Report($"Selected date ({dateHint}). Waiting before Book Now...");
-                await page.WaitForTimeoutAsync(1200);
-
-                if (await IsSessionErrorPageAsync(page))
-                {
-                    progress?.Report(SessionErrorMessage());
-                    return false;
-                }
-
-                if (await TryClickBookNowOnceAsync(page, trainNum, progress))
-                {
-                    return true;
-                }
-            }
-            else if (string.Equals(result?.Reason, "train-not-found", StringComparison.OrdinalIgnoreCase))
-            {
-                progress?.Report($"Train {trainNum} lost from DOM — scroll list and retry...");
-            }
-
-            try
-            {
-                var root = page.Locator("app-train-avl-enq")
-                    .Filter(new LocatorFilterOptions { HasText = trainNum })
-                    .First;
-
-                if (await root.CountAsync() > 0)
-                {
-                    var dateCards = root.Locator(".pre-avl");
-                    var n = await dateCards.CountAsync();
-                    ILocator? pick = null;
-                    for (var i = 0; i < n; i++)
-                    {
-                        var c = dateCards.Nth(i);
-                        var text = await c.InnerTextAsync();
-                        if (text.Contains("REGRET", StringComparison.OrdinalIgnoreCase)) continue;
-                        if (!System.Text.RegularExpressions.Regex.IsMatch(
-                                text,
-                                @"\d{1,2}\s*,?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)",
-                                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                        {
-                            continue;
-                        }
-
-                        if (!System.Text.RegularExpressions.Regex.IsMatch(
-                                text, @"AVAILABLE|RAC|\bWL\s*\d*|WAITING",
-                                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                        {
-                            continue;
-                        }
-
-                        if (config.ConfirmBerthsOnly &&
-                            !text.Contains("AVAILABLE", StringComparison.OrdinalIgnoreCase))
-                        {
-                            continue;
-                        }
-
-                        if (text.Contains(dateHint, StringComparison.OrdinalIgnoreCase)
-                            || (text.Contains(dateDay) && text.Contains(dateMonth, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            pick = c;
-                            break;
-                        }
-
-                        pick ??= c;
-                    }
-
-                    if (pick is not null)
-                    {
-                        await pick.ClickAsync(new LocatorClickOptions { Force = true });
-                        progress?.Report($"Clicked date ({dateHint}).");
-                        await page.WaitForTimeoutAsync(1200);
-                        if (await TryClickBookNowOnceAsync(page, trainNum, progress))
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                progress?.Report($"Fallback: {ex.Message}");
-            }
 
             if (await IsSessionErrorPageAsync(page))
             {
@@ -681,21 +563,35 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 return false;
             }
 
-            progress?.Report($"Attempt {attempt}: {result?.Reason ?? "pending"}...");
+            var dateClicked = await TryClickTravelDateCardAsync(
+                page, trainNum, dateHint, dateDay, dateMonth, config.ConfirmBerthsOnly, progress);
 
-            if (attempt <= 3 && !string.Equals(result?.Reason, "no-confirm-berth", StringComparison.OrdinalIgnoreCase))
+            if (dateClicked)
+            {
+                progress?.Report($"Selected date ({dateHint}). Waiting for Book Now to enable...");
+                await page.WaitForTimeoutAsync(1000);
+
+                if (await TryClickBookNowOnceAsync(page, trainNum, progress))
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                progress?.Report($"Attempt {attempt}: date card not clicked yet...");
+            }
+
+            // Light refresh of selected class tab (like main / extension) — max 3 times
+            if (attempt <= 3)
             {
                 await page.EvaluateAsync("""
                     (trainNum) => {
-                        const roots = [...document.querySelectorAll('app-train-avl-enq')];
-                        const root = roots.find(el => (el.textContent || '').includes(trainNum));
+                        const roots = Array.from(document.querySelectorAll('app-train-avl-enq'));
+                        const root = roots.find(el => (el.textContent || '').indexOf(trainNum) >= 0);
                         if (!root) return;
                         const tab = root.querySelector(
                             'li[role="tab"][aria-selected="true"] a, li[aria-selected="true"] a, .ui-state-active a');
-                        if (tab) { tab.click(); return; }
-                        const refresh = [...root.querySelectorAll('a, span, button')]
-                            .find(n => /^\s*Refresh\s*$/i.test((n.textContent || '').trim()));
-                        if (refresh) refresh.click();
+                        if (tab) tab.click();
                     }
                     """, trainNum);
             }
@@ -703,8 +599,122 @@ public sealed class IrctcBookingService : IAsyncDisposable
             await page.WaitForTimeoutAsync(refreshMs);
         }
 
-        progress?.Report("Timed out on train list. Manually: class → date → Book Now (one click).");
+        progress?.Report("Timed out. Manually: click date card → Book Now (one click).");
         return false;
+    }
+
+    /// <summary>
+    /// Click IRCTC date availability card (.pre-avl with "Wed, 22 Jul" + WL/AVAILABLE).
+    /// Uses Playwright locator clicks so Angular change detection enables Book Now.
+    /// </summary>
+    private static async Task<bool> TryClickTravelDateCardAsync(
+        IPage page,
+        string trainNum,
+        string dateHint,
+        string dateDay,
+        string dateMonth,
+        bool confirmOnly,
+        IProgress<string>? progress)
+    {
+        try
+        {
+            var root = page.Locator("app-train-avl-enq")
+                .Filter(new LocatorFilterOptions { HasText = trainNum })
+                .First;
+
+            if (await root.CountAsync() == 0)
+            {
+                return false;
+            }
+
+            await root.ScrollIntoViewIfNeededAsync();
+
+            var dateCards = root.Locator(".pre-avl");
+            var n = await dateCards.CountAsync();
+            ILocator? exact = null;
+            ILocator? available = null;
+            ILocator? anyOk = null;
+
+            for (var i = 0; i < n; i++)
+            {
+                var card = dateCards.Nth(i);
+                string text;
+                try
+                {
+                    text = (await card.InnerTextAsync()).Replace('\n', ' ');
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (text.Contains("REGRET", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Must look like a date availability card, not a class tab "AC 3 Tier (3A)"
+                var hasMonthDate = System.Text.RegularExpressions.Regex.IsMatch(
+                    text,
+                    @"\d{1,2}\s*,?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                var hasStatus = System.Text.RegularExpressions.Regex.IsMatch(
+                    text,
+                    @"AVAILABLE|RAC|\bWL\d*\b|WAITING",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                if (!hasMonthDate || !hasStatus)
+                {
+                    continue;
+                }
+
+                if (confirmOnly && !text.Contains("AVAILABLE", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Prefer "22 Jul" / "Wed, 22 Jul" — never bare "22" (matches WL22)
+                var matchesTravelDate =
+                    text.Contains(dateHint, StringComparison.OrdinalIgnoreCase)
+                    || System.Text.RegularExpressions.Regex.IsMatch(
+                        text,
+                        $@"\b{System.Text.RegularExpressions.Regex.Escape(dateDay)}\s*,?\s*{System.Text.RegularExpressions.Regex.Escape(dateMonth)}\b",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                if (matchesTravelDate)
+                {
+                    exact = card;
+                    break;
+                }
+
+                if (text.Contains("AVAILABLE", StringComparison.OrdinalIgnoreCase))
+                {
+                    available ??= card;
+                }
+
+                anyOk ??= card;
+            }
+
+            var pick = exact ?? available ?? anyOk;
+            if (pick is null)
+            {
+                if (confirmOnly)
+                {
+                    progress?.Report(
+                        "No AVAILABLE date cards (only WL/RAC). Uncheck 'Book only if confirm berths' to continue.");
+                }
+
+                return false;
+            }
+
+            await pick.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5_000 });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Date click note: {ex.Message}");
+            return false;
+        }
     }
 
     private static async Task<bool> ClickTrainClassAsync(
@@ -713,12 +723,34 @@ public sealed class IrctcBookingService : IAsyncDisposable
         string classCode,
         IProgress<string>? progress)
     {
+        // If date cards already visible for this class, do not re-click Refresh (keeps current avl).
+        var alreadyOpen = await page.EvaluateAsync<bool>("""
+            ({ trainNum, classCode }) => {
+                const roots = Array.from(document.querySelectorAll('app-train-avl-enq'));
+                const root = roots.find(el => (el.textContent || '').indexOf(trainNum) >= 0);
+                if (!root) return false;
+                const text = root.textContent || '';
+                const hasDates = /\d{1,2}\s*,?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(text)
+                    && /AVAILABLE|RAC|\bWL\d*\b|WAITING/i.test(text);
+                const tabSelected = Array.from(root.querySelectorAll('li[role="tab"][aria-selected="true"], .ui-state-active'))
+                    .some(el => new RegExp('\\b' + classCode + '\\b', 'i').test(el.textContent || '')
+                        || (el.textContent || '').indexOf('(' + classCode + ')') >= 0);
+                return hasDates && (tabSelected || new RegExp('\\(' + classCode + '\\)').test(text));
+            }
+            """, new { trainNum, classCode });
+
+        if (alreadyOpen)
+        {
+            progress?.Report($"Class {classCode} already open with dates — skipping Refresh.");
+            return true;
+        }
+
         var clicked = await page.EvaluateAsync<bool>("""
             ({ trainNum, classCode }) => {
-                const roots = [...document.querySelectorAll('app-train-avl-enq')];
+                const roots = Array.from(document.querySelectorAll('app-train-avl-enq'));
                 const root = roots.find(el => {
                     const t = el.textContent || '';
-                    return t.includes(trainNum) || t.replace(/\D/g, ' ').split(/\s+/).includes(trainNum);
+                    return t.indexOf(trainNum) >= 0 || t.replace(/\D/g, ' ').split(/\s+/).indexOf(trainNum) >= 0;
                 });
                 if (!root) return false;
                 root.scrollIntoView({ block: 'center' });
@@ -726,39 +758,40 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 const needle = '(' + classCode + ')';
                 const codeRe = new RegExp('\\b' + classCode + '\\b', 'i');
 
-                const boxes = [...root.querySelectorAll('.pre-avl')];
-                for (const box of boxes) {
+                // Prefer class tabs if present
+                const tabs = Array.from(root.querySelectorAll('li[role="tab"] a, p-tabmenu a, .ui-tabview-nav a'));
+                for (let i = 0; i < tabs.length; i++) {
+                    const t = (tabs[i].textContent || '').replace(/\s+/g, ' ').trim();
+                    if (t.indexOf(needle) >= 0 || codeRe.test(t) || (classCode === 'SL' && /sleeper/i.test(t))) {
+                        tabs[i].click();
+                        return true;
+                    }
+                }
+
+                const boxes = Array.from(root.querySelectorAll('.pre-avl'));
+                for (let i = 0; i < boxes.length; i++) {
+                    const box = boxes[i];
                     const text = (box.textContent || '').replace(/\s+/g, ' ').trim();
-                    const strong = (box.querySelector('strong')?.textContent || '').trim();
+                    const strong = ((box.querySelector('strong') || {}).textContent || '').trim();
                     const label = strong || text;
                     if (/\d{1,2}\s*,?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(text) &&
                         /AVAILABLE|WL|RAC|REGRET|WAITING/i.test(text)) {
                         continue;
                     }
                     const matches =
-                        label.includes(needle) ||
+                        label.indexOf(needle) >= 0 ||
                         codeRe.test(label) ||
                         (classCode === 'SL' && /sleeper/i.test(label)) ||
                         (classCode === '3A' && /3\s*tier|ac\s*3/i.test(label)) ||
                         (classCode === '2A' && /2\s*tier|ac\s*2/i.test(label)) ||
-                        (classCode === '1A' && /first|1\s*tier|ac\s*first/i.test(label)) ||
-                        (classCode === 'CC' && /chair/i.test(label)) ||
-                        (classCode === '3E' && /economy|3e/i.test(label));
+                        (classCode === '1A' && /first|1\s*tier|ac\s*first/i.test(label));
 
                     if (!matches) continue;
 
-                    const refresh = [...box.querySelectorAll('a, span, div, button')].find(n =>
+                    const refresh = Array.from(box.querySelectorAll('a, span, div, button')).find(n =>
                         /^\s*Refresh\s*$/i.test((n.textContent || '').trim()));
                     (refresh || box).click();
                     return true;
-                }
-
-                for (const tab of root.querySelectorAll('li[role="tab"] a, p-tabmenu a, .ui-tabview-nav a')) {
-                    const t = (tab.textContent || '').replace(/\s+/g, ' ').trim();
-                    if (t.includes(needle) || codeRe.test(t) || (classCode === 'SL' && /sleeper/i.test(t))) {
-                        tab.click();
-                        return true;
-                    }
                 }
                 return false;
             }
@@ -774,21 +807,19 @@ public sealed class IrctcBookingService : IAsyncDisposable
             var trainRoot = page.Locator("app-train-avl-enq")
                 .Filter(new LocatorFilterOptions { HasText = trainNum })
                 .First;
+            var classTab = trainRoot.GetByRole(AriaRole.Tab, new() { NameRegex = new System.Text.RegularExpressions.Regex(classCode, System.Text.RegularExpressions.RegexOptions.IgnoreCase) });
+            if (await classTab.CountAsync() > 0)
+            {
+                await classTab.First.ClickAsync(new LocatorClickOptions { Force = true });
+                return true;
+            }
+
             var classBox = trainRoot.Locator(".pre-avl")
                 .Filter(new LocatorFilterOptions { HasText = classCode })
                 .First;
             if (await classBox.CountAsync() > 0)
             {
-                var refresh = classBox.GetByText("Refresh", new LocatorGetByTextOptions { Exact = true });
-                if (await refresh.CountAsync() > 0)
-                {
-                    await refresh.First.ClickAsync(new LocatorClickOptions { Force = true });
-                }
-                else
-                {
-                    await classBox.ClickAsync(new LocatorClickOptions { Force = true });
-                }
-
+                await classBox.ClickAsync(new LocatorClickOptions { Force = true });
                 return true;
             }
         }
@@ -877,12 +908,27 @@ public sealed class IrctcBookingService : IAsyncDisposable
             return false;
         }
 
-        var classAttr = (await book.GetAttributeAsync("class")) ?? string.Empty;
-        var disabled = await book.IsDisabledAsync()
-                       || classAttr.Contains("disable-book", StringComparison.OrdinalIgnoreCase);
-        if (disabled)
+        // Wait until IRCTC enables Book Now after date selection (main approach)
+        for (var i = 0; i < 20; i++)
         {
-            progress?.Report("Book Now still disabled — click a date card first.");
+            var classAttr = (await book.GetAttributeAsync("class")) ?? string.Empty;
+            var disabled = await book.IsDisabledAsync()
+                           || classAttr.Contains("disable-book", StringComparison.OrdinalIgnoreCase);
+            if (!disabled)
+            {
+                break;
+            }
+
+            await page.WaitForTimeoutAsync(250);
+        }
+
+        var stillDisabled = await book.IsDisabledAsync()
+            || ((await book.GetAttributeAsync("class")) ?? string.Empty)
+                .Contains("disable-book", StringComparison.OrdinalIgnoreCase);
+
+        if (stillDisabled)
+        {
+            progress?.Report("Book Now still disabled — date may not be selected.");
             return false;
         }
 

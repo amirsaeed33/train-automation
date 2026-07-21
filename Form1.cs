@@ -57,7 +57,7 @@ public partial class Form1 : Form
         PopulateStationCombo(fromStationCombo, _stations);
         PopulateStationCombo(toStationCombo, _stations);
         SelectDefaultStation(fromStationCombo, "NDLS", "NEW DELHI");
-        SelectDefaultStation(toStationCombo, "MMCT", "MUMBAI CENTRAL");
+        SelectDefaultStation(toStationCombo, "PNBE", "PATNA");
         UpdateTicketName();
     }
 
