@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/train-automation
+/bin/Debug/net9.0-windows
+/obj/Debug/net9.0-windows/train_automation.CaptchaDialog.resources
+*.resources
