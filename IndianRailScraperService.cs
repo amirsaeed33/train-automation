@@ -37,11 +37,7 @@ public sealed class IndianRailScraperService : IAsyncDisposable
         await EnsurePageAsync(progress);
 
         var page = _page!;
-        await page.GotoAsync(SiteUrl, new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.DOMContentLoaded,
-            Timeout = 120_000
-        });
+        await NavigateToEnquiryAsync(page, progress, cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         await page.WaitForTimeoutAsync(1500);
@@ -971,6 +967,128 @@ public sealed class IndianRailScraperService : IAsyncDisposable
     private static IWin32Window? GetDialogOwner() =>
         Form.ActiveForm;
 
+    private async Task NavigateToEnquiryAsync(
+        IPage page,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                progress?.Report(attempt == 1
+                    ? "Opening Indian Railways enquiry..."
+                    : $"Retrying Indian Railways page ({attempt}/3)...");
+
+                // Commit is more tolerant than DOMContentLoaded when the site redirects/aborts.
+                await page.GotoAsync(SiteUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.Commit,
+                    Timeout = 90_000
+                });
+
+                try
+                {
+                    await page.WaitForLoadStateAsync(
+                        LoadState.DOMContentLoaded,
+                        new PageWaitForLoadStateOptions { Timeout = 45_000 });
+                }
+                catch (TimeoutException)
+                {
+                    // Page may still be usable if form fields appeared.
+                }
+
+                if (await IsEnquiryPageReadyAsync(page))
+                {
+                    return;
+                }
+
+                // Soft wait for the search form
+                await page.Locator("#sourceStation, #destinationStation, #dt")
+                    .First
+                    .WaitForAsync(new LocatorWaitForOptions
+                    {
+                        Timeout = 20_000,
+                        State = WaitForSelectorState.Attached
+                    });
+                return;
+            }
+            catch (PlaywrightException ex) when (IsTransientNavigationError(ex))
+            {
+                lastError = ex;
+
+                // ERR_ABORTED often means a redirect aborted the watched navigation —
+                // continue if the enquiry form is already on the page.
+                if (await IsEnquiryPageReadyAsync(page))
+                {
+                    progress?.Report("Indian Railways page loaded after redirect.");
+                    return;
+                }
+
+                progress?.Report($"Navigation interrupted ({ex.Message.Split('\n')[0]}). Retrying...");
+                await Task.Delay(800 * attempt, cancellationToken);
+
+                if (attempt >= 2)
+                {
+                    await RecreatePageAsync(progress);
+                    page = _page!;
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Could not open indianrail.gov.in (navigation aborted). Check internet / VPN / firewall, then click the class again.",
+            lastError);
+    }
+
+    private static bool IsTransientNavigationError(PlaywrightException ex) =>
+        ex.Message.Contains("ERR_ABORTED", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("ERR_CONNECTION", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("ERR_NAME_NOT_RESOLVED", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("ERR_TIMED_OUT", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("net::ERR_", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<bool> IsEnquiryPageReadyAsync(IPage page)
+    {
+        try
+        {
+            if (!page.Url.Contains("indianrail.gov.in", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return await page.Locator("#sourceStation, #destinationStation, input#dt, #modal1").CountAsync() > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task RecreatePageAsync(IProgress<string>? progress = null)
+    {
+        progress?.Report("Restarting browser session for Indian Railways...");
+        _activeSessionSettings = null;
+
+        if (_page is not null)
+        {
+            try { await _page.CloseAsync(); } catch { /* ignore */ }
+            _page = null;
+        }
+
+        if (_context is not null)
+        {
+            try { await _context.CloseAsync(); } catch { /* ignore */ }
+            _context = null;
+        }
+
+        await EnsurePageAsync(progress);
+    }
+
     private async Task EnsurePageAsync(IProgress<string>? progress = null)
     {
         if (_page is not null)
@@ -981,7 +1099,11 @@ public sealed class IndianRailScraperService : IAsyncDisposable
         _playwright ??= await Playwright.CreateAsync();
         try
         {
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+            _browser ??= await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Args = ["--disable-blink-features=AutomationControlled"]
+            });
         }
         catch (PlaywrightException ex) when (IsMissingBrowserError(ex))
         {
@@ -993,7 +1115,11 @@ public sealed class IndianRailScraperService : IAsyncDisposable
                     "Playwright browser install failed. Run playwright.ps1 install chromium.");
             }
 
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true,
+                Args = ["--disable-blink-features=AutomationControlled"]
+            });
         }
 
         _context = await _browser.NewContextAsync(new BrowserNewContextOptions
@@ -1001,9 +1127,12 @@ public sealed class IndianRailScraperService : IAsyncDisposable
             UserAgent =
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             ViewportSize = new ViewportSize { Width = 1280, Height = 900 },
-            Locale = "en-IN"
+            Locale = "en-IN",
+            IgnoreHTTPSErrors = true
         });
         _page = await _context.NewPageAsync();
+        _page.SetDefaultNavigationTimeout(90_000);
+        _page.SetDefaultTimeout(60_000);
     }
 
     private static bool IsMissingBrowserError(PlaywrightException ex) =>

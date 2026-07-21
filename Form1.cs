@@ -2,7 +2,9 @@ namespace train_automation;
 
 public partial class Form1 : Form
 {
-    private IndianRailScraperService? _scraper;
+    private IrctcBookingService? _irctcService;
+    private readonly BookingConfiguration _config = BookingConfiguration.Load();
+    private CancellationTokenSource? _cts;
     private readonly IReadOnlyList<StationInfo> _stations = HardcodedStations.All;
     private TrainSearchSettings? _lastSearchSettings;
     private TrainSelection? _selectedTrain;
@@ -20,6 +22,34 @@ public partial class Form1 : Form
         ConfigurePassengerGrid();
         ConfigureAvailabilityGrids();
         ConfigureDropdowns();
+        LoadBookingConfigIntoUi();
+    }
+
+    private void LoadBookingConfigIntoUi()
+    {
+        irctcUserText.Text = _config.Credentials.Username;
+        irctcPassText.Text = _config.Credentials.Password;
+        if (!string.IsNullOrWhiteSpace(_config.MobileNumber))
+        {
+            mobileText.Text = _config.MobileNumber;
+        }
+
+        confirmBerthsCheck.Checked = _config.ConfirmBerthsOnly;
+        autoUpgradeCheck.Checked = _config.AutoUpgrade;
+
+        if (!string.IsNullOrWhiteSpace(_config.PaymentMethod))
+        {
+            for (var i = 0; i < gatewayCombo.Items.Count; i++)
+            {
+                var text = gatewayCombo.Items[i]?.ToString() ?? string.Empty;
+                if (text.Contains("BHIM", StringComparison.OrdinalIgnoreCase)
+                    || text.Equals(_config.PaymentMethod, StringComparison.OrdinalIgnoreCase))
+                {
+                    gatewayCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+        }
     }
 
     private void LoadStations()
@@ -39,10 +69,10 @@ public partial class Form1 : Form
         ticketSlotCombo.Items.AddRange(["Select_Auto Slot", "Slot-1", "Slot-2"]);
         ticketSlotCombo.SelectedIndex = 0;
 
-        gatewayCombo.Items.AddRange(["Netbanking / Wallet", "BHIM/UPI", "Credit/Debit Card"]);
+        gatewayCombo.Items.AddRange(["BHIM/UPI", "Netbanking / Wallet", "Credit/Debit Card", "IRCTC eWallet"]);
         gatewayCombo.SelectedIndex = 0;
 
-        priorBankCombo.Items.AddRange(["PayTM-QR_paytm@qr", "PhonePe", "HDFC Netbanking"]);
+        priorBankCombo.Items.AddRange(["PayTM-QR_paytm@qr", "PhonePe", "Amazon Pay", "HDFC Netbanking"]);
         priorBankCombo.SelectedIndex = 0;
 
         backupBankCombo.Items.AddRange(["No Alternate Bank", "PayTM", "PhonePe"]);
@@ -333,51 +363,35 @@ public partial class Form1 : Form
         _trainListDialog.Show(this);
     }
 
-    private async void TrainListDialog_ClassSelected(object? sender, TrainClassSelectedEventArgs e)
+    private void TrainListDialog_ClassSelected(object? sender, TrainClassSelectedEventArgs e)
     {
-        if (_scraper is null || _lastSearchSettings is null)
+        // Same as main: selecting a class only picks train/class for IRCTC booking.
+        // Fare/availability is checked on IRCTC during Book IRCTC — not indianrail.gov.in.
+        ApplyTrainSelection(e.Train, e.TravelClass);
+        ClearFareAvailabilityPanel();
+        trainListHeader.Text =
+            $"Selected — Train {e.Train.TrainNumber} / {e.TravelClass}. Click Book IRCTC when ready.";
+        statusLabel.Text =
+            $"Selected {e.Train.TrainNumber} ({e.TravelClass}). Fill passengers, then Book IRCTC.";
+    }
+
+    private void ClearFareAvailabilityPanel()
+    {
+        if (fareGrid.Rows.Count == 0)
         {
-            return;
+            fareGrid.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
+                string.Empty, string.Empty, string.Empty);
         }
-
-        UseWaitCursor = true;
-        statusLabel.Text = $"Loading {e.TravelClass} availability for train {e.Train.TrainNumber}...";
-
-        try
+        else
         {
-            _scraper ??= new IndianRailScraperService
+            for (var i = 0; i < fareGrid.Columns.Count; i++)
             {
-                CaptchaProvider = PromptCaptchaAsync,
-                DialogOwner = this
-            };
-            _scraper.DialogOwner = this;
-
-            var rebuiltSession = false;
-            if (!_scraper.HasActiveSessionFor(_lastSearchSettings))
-            {
-                statusLabel.Text = "Connecting to Indian Railways (captcha may be required)...";
-                await _scraper.SearchTrainsAsync(_lastSearchSettings);
-                rebuiltSession = true;
+                fareGrid.Rows[0].Cells[i].Value = string.Empty;
             }
+        }
 
-            var availability = await _scraper.GetClassAvailabilityAsync(
-                GetIndianRailQuotaCode(),
-                e.Train.TrainNumber,
-                e.TravelClass,
-                rebuiltSession ? null : e.ClassLinkKey);
-            ApplyTrainSelection(e.Train, e.TravelClass);
-            ShowAvailabilityInParent(availability);
-            statusLabel.Text = $"Loaded {e.TravelClass} fare and availability for train {e.Train.TrainNumber}.";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Availability", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            statusLabel.Text = "Availability load failed.";
-        }
-        finally
-        {
-            UseWaitCursor = false;
-        }
+        availabilityGrid.Rows.Clear();
+        fareText.Text = "0";
     }
 
     private void ApplyTrainSelection(TrainResult train, string travelClass)
@@ -410,66 +424,6 @@ public partial class Form1 : Form
         UpdateTicketName();
     }
 
-    private void ShowAvailabilityInParent(ClassAvailabilityResult availability)
-    {
-        trainListHeader.Text =
-            $"Fare & Availability — Train {availability.TrainNumber} / {availability.TravelClass} / {availability.TravelDate}";
-
-        if (fareGrid.Rows.Count == 0)
-        {
-            fareGrid.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
-                string.Empty, string.Empty, string.Empty);
-        }
-
-        var fareRow = fareGrid.Rows[0];
-        fareRow.Cells["Base"].Value = availability.BaseFare;
-        fareRow.Cells["Reservation"].Value = availability.ReservationCharges;
-        fareRow.Cells["Superfast"].Value = availability.SuperfastCharges;
-        fareRow.Cells["Other"].Value = availability.OtherCharges;
-        fareRow.Cells["Tatkal"].Value = availability.TatkalCharges;
-        fareRow.Cells["GST"].Value = availability.GoodsServiceTax;
-        fareRow.Cells["Catering"].Value = availability.CateringCharge;
-        fareRow.Cells["Dynamic"].Value = availability.DynamicFare;
-        fareRow.Cells["Total"].Value = availability.TotalFare;
-        fareText.Text = availability.TotalFare;
-
-        availabilityGrid.Rows.Clear();
-        foreach (var day in availability.AvailabilityDays)
-        {
-            availabilityGrid.Rows.Add(day.Date, day.Status);
-        }
-
-        if (availabilityGrid.Rows.Count == 0)
-        {
-            availabilityGrid.Rows.Add(availability.TravelDate, "No availability data returned.");
-        }
-    }
-
-    private Task<string?> PromptCaptchaAsync(IWin32Window? owner, byte[] imageBytes)
-    {
-        var dialogOwner = owner ?? this;
-        if (!InvokeRequired)
-        {
-            using var dialog = new CaptchaDialog(imageBytes);
-            return Task.FromResult(dialog.ShowDialog(dialogOwner) == DialogResult.OK ? dialog.Answer : null);
-        }
-
-        var completion = new TaskCompletionSource<string?>();
-        BeginInvoke(() =>
-        {
-            try
-            {
-                using var dialog = new CaptchaDialog(imageBytes);
-                completion.SetResult(dialog.ShowDialog(dialogOwner) == DialogResult.OK ? dialog.Answer : null);
-            }
-            catch (Exception ex)
-            {
-                completion.SetException(ex);
-            }
-        });
-        return completion.Task;
-    }
-
     private void UpdateTicketName()
     {
         var fromCode = GetSelectedStation(fromStationCombo)?.Code ?? fromStationCombo.Text.Trim();
@@ -490,7 +444,8 @@ public partial class Form1 : Form
 
         MessageBox.Show(
             this,
-            $"Train: {_selectedTrain.Train.TrainNumber}\nClass: {classCombo.SelectedItem}\nCheck the Fare & Availability panel below.",
+            $"Train: {_selectedTrain.Train.TrainNumber}\nClass: {classCombo.SelectedItem}\n\n"
+            + "Availability is checked on IRCTC when you click Book IRCTC (same as main).",
             "Availability",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -565,6 +520,7 @@ public partial class Form1 : Form
         try
         {
             BookingJsonStore.Append(booking);
+            SaveIrctcConfigFromUi();
             MessageBox.Show(this, $"Ticket saved.\n{BookingJsonStore.FilePath}", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             statusLabel.Text = "Ticket saved to JSON.";
         }
@@ -572,6 +528,209 @@ public partial class Form1 : Form
         {
             MessageBox.Show(this, ex.Message, "Save Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static (string Code, string Name) ResolveIrctcStation(
+        string? trainStationField,
+        string fallbackCode,
+        string fallbackName)
+    {
+        var fromTrain = HardcodedStations.Find(trainStationField);
+        if (fromTrain is not null)
+        {
+            return (fromTrain.Code, fromTrain.Name);
+        }
+
+        // Etrain sometimes puts only a code like "NZM" or "NDLS"
+        if (!string.IsNullOrWhiteSpace(trainStationField))
+        {
+            var raw = trainStationField.Trim();
+            if (raw.Length is >= 2 and <= 5 && raw.All(char.IsLetter))
+            {
+                return (raw.ToUpperInvariant(), raw.ToUpperInvariant());
+            }
+        }
+
+        return (fallbackCode, fallbackName);
+    }
+
+    private void SaveIrctcConfigFromUi()
+    {
+        _config.Credentials.Username = irctcUserText.Text.Trim();
+        _config.Credentials.Password = irctcPassText.Text;
+        _config.MobileNumber = mobileText.Text.Trim();
+        _config.ConfirmBerthsOnly = confirmBerthsCheck.Checked;
+        _config.AutoUpgrade = autoUpgradeCheck.Checked;
+        _config.PaymentMethod = gatewayCombo.SelectedItem?.ToString() ?? "BHIM/UPI";
+        _config.PaymentProvider = priorBankCombo.SelectedItem?.ToString() ?? "PAYTM";
+        _config.PreferredClass = classCombo.SelectedItem?.ToString() ?? _config.PreferredClass;
+        _config.Quota = GetIndianRailQuotaCode();
+        _config.Passengers = GetPassengers().Select(p => new Passenger
+        {
+            Name = p.Name,
+            Age = p.Age > 0 ? p.Age.ToString() : string.Empty,
+            Gender = p.Gender switch
+            {
+                "F" => "Female",
+                "T" => "Transgender",
+                _ => "Male"
+            },
+            BerthPreference = MapBerthPreference(p.Berth),
+            FoodPreference = MapFoodPreference(p.Food)
+        }).ToList();
+        _config.Save();
+    }
+
+    private static string MapBerthPreference(string berth) => berth switch
+    {
+        "Lower" => "Lower",
+        "Middle" => "Middle",
+        "Upper" => "Upper",
+        "Side Lower" => "Side Lower",
+        "Side Upper" => "Side Upper",
+        _ => "No Preference"
+    };
+
+    private static string MapFoodPreference(string food) => food switch
+    {
+        "Veg" => "Veg",
+        "Non-Veg" => "Non Veg",
+        _ => "No Preference"
+    };
+
+    private async void BookIrctcButton_Click(object? sender, EventArgs e)
+    {
+        if (_selectedTrain is null || _lastSearchSettings is null)
+        {
+            MessageBox.Show(this, "Find a train and click a class first.", "Book IRCTC",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var passengers = GetPassengers();
+        if (passengers.Count == 0)
+        {
+            MessageBox.Show(this, "Enter at least one passenger.", "Book IRCTC",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        SaveIrctcConfigFromUi();
+
+        if (string.IsNullOrWhiteSpace(_config.Credentials.Username)
+            || string.IsNullOrWhiteSpace(_config.Credentials.Password))
+        {
+            MessageBox.Show(this, "Enter IRCTC username and password.", "Book IRCTC",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var preferredClass = classCombo.SelectedItem?.ToString() ?? "SL";
+        var trainNumber = !string.IsNullOrWhiteSpace(trainNoText.Text)
+            ? trainNoText.Text.Trim()
+            : _selectedTrain.Train.TrainNumber;
+
+        // IRCTC must search the train's own from/to (Find list can show trains that
+        // don't appear for the UI From/To, e.g. NZM–TVC 22654 vs NDLS–MMCT).
+        var (fromCode, fromName) = ResolveIrctcStation(
+            _selectedTrain.Train.FromStation,
+            _lastSearchSettings.FromStationCode,
+            _lastSearchSettings.FromStationName);
+        var (toCode, toName) = ResolveIrctcStation(
+            _selectedTrain.Train.ToStation,
+            _lastSearchSettings.ToStationCode,
+            _lastSearchSettings.ToStationName);
+
+        if (!fromCode.Equals(_lastSearchSettings.FromStationCode, StringComparison.OrdinalIgnoreCase)
+            || !toCode.Equals(_lastSearchSettings.ToStationCode, StringComparison.OrdinalIgnoreCase))
+        {
+            statusLabel.Text =
+                $"IRCTC will search {fromCode} → {toCode} (train stations), not "
+                + $"{_lastSearchSettings.FromStationCode} → {_lastSearchSettings.ToStationCode}.";
+        }
+
+        var settings = new TrainSearchSettings
+        {
+            FromStationCode = fromCode,
+            FromStationName = fromName,
+            ToStationCode = toCode,
+            ToStationName = toName,
+            TravelDate = _lastSearchSettings.TravelDate,
+            Quota = GetIndianRailQuotaCode(),
+            PreferredClass = preferredClass,
+            SiteUrl = _lastSearchSettings.SiteUrl
+        };
+
+        var train = new TrainResult
+        {
+            TrainNumber = trainNumber,
+            TrainName = _selectedTrain.Train.TrainName,
+            FromStation = _selectedTrain.Train.FromStation,
+            Departure = _selectedTrain.Train.Departure,
+            ToStation = _selectedTrain.Train.ToStation,
+            Arrival = _selectedTrain.Train.Arrival,
+            TravelTime = _selectedTrain.Train.TravelTime,
+            Sunday = _selectedTrain.Train.Sunday,
+            Monday = _selectedTrain.Train.Monday,
+            Tuesday = _selectedTrain.Train.Tuesday,
+            Wednesday = _selectedTrain.Train.Wednesday,
+            Thursday = _selectedTrain.Train.Thursday,
+            Friday = _selectedTrain.Train.Friday,
+            Saturday = _selectedTrain.Train.Saturday,
+            AvailableClasses = _selectedTrain.Train.AvailableClasses,
+            ClassLinkKeys = _selectedTrain.Train.ClassLinkKeys
+        };
+
+        bookIrctcButton.Enabled = false;
+        findButton.Enabled = false;
+        saveButton.Enabled = false;
+        stopButton.Enabled = true;
+        UseWaitCursor = true;
+
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+
+        var progress = new Progress<string>(message =>
+        {
+            if (IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+
+            statusLabel.Text = message;
+        });
+
+        try
+        {
+            statusLabel.Text = "Starting IRCTC booking...";
+            _irctcService ??= new IrctcBookingService();
+            await _irctcService.BookTrainAsync(settings, train, _config, progress, _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            statusLabel.Text = "Automation stopped by user.";
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = $"Automation stopped: {ex.Message}";
+            MessageBox.Show(this, ex.Message, "Book IRCTC", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            bookIrctcButton.Enabled = true;
+            findButton.Enabled = true;
+            saveButton.Enabled = true;
+            stopButton.Enabled = false;
+            UseWaitCursor = false;
+            Cursor = Cursors.Default;
+        }
+    }
+
+    private void StopButton_Click(object? sender, EventArgs e)
+    {
+        _cts?.Cancel();
+        statusLabel.Text = "Stopping automation...";
+        stopButton.Enabled = false;
     }
 
     private string GetSelectedQuota()
@@ -643,13 +802,16 @@ public partial class Form1 : Form
 
     protected override async void OnFormClosed(FormClosedEventArgs e)
     {
+        _cts?.Cancel();
         _trainListDialog?.Dispose();
-        if (_scraper is not null)
+
+        if (_irctcService is not null)
         {
-            await _scraper.DisposeAsync();
-            _scraper = null;
+            await _irctcService.DisposeAsync();
+            _irctcService = null;
         }
 
+        _cts?.Dispose();
         base.OnFormClosed(e);
     }
 }

@@ -60,6 +60,12 @@
             ticketNameLabel = new Label();
             ticketNameText = new TextBox();
             saveButton = new Button();
+            bookIrctcButton = new Button();
+            stopButton = new Button();
+            irctcUserLabel = new Label();
+            irctcUserText = new TextBox();
+            irctcPassLabel = new Label();
+            irctcPassText = new TextBox();
             statusLabel = new Label();
             titlePanel.SuspendLayout();
             trainListPanel.SuspendLayout();
@@ -75,7 +81,7 @@
             titlePanel.Dock = DockStyle.Top;
             titlePanel.Location = new Point(0, 0);
             titlePanel.Name = "titlePanel";
-            titlePanel.Size = new Size(734, 32);
+            titlePanel.Size = new Size(780, 32);
             titlePanel.TabIndex = 0;
             // 
             // titleLabel
@@ -474,8 +480,8 @@
             // confirmBerthsCheck
             // 
             confirmBerthsCheck.AutoSize = true;
-            confirmBerthsCheck.Checked = true;
-            confirmBerthsCheck.CheckState = CheckState.Checked;
+            confirmBerthsCheck.Checked = false;
+            confirmBerthsCheck.CheckState = CheckState.Unchecked;
             confirmBerthsCheck.Location = new Point(250, 586);
             confirmBerthsCheck.Name = "confirmBerthsCheck";
             confirmBerthsCheck.Size = new Size(269, 24);
@@ -499,24 +505,84 @@
             ticketNameText.Size = new Size(180, 27);
             ticketNameText.TabIndex = 39;
             // 
+            // irctcUserLabel
+            // 
+            irctcUserLabel.AutoSize = true;
+            irctcUserLabel.Location = new Point(480, 518);
+            irctcUserLabel.Name = "irctcUserLabel";
+            irctcUserLabel.Size = new Size(82, 20);
+            irctcUserLabel.TabIndex = 42;
+            irctcUserLabel.Text = "IRCTC User";
+            // 
+            // irctcUserText
+            // 
+            irctcUserText.Location = new Point(568, 514);
+            irctcUserText.Name = "irctcUserText";
+            irctcUserText.Size = new Size(150, 27);
+            irctcUserText.TabIndex = 43;
+            // 
+            // irctcPassLabel
+            // 
+            irctcPassLabel.AutoSize = true;
+            irctcPassLabel.Location = new Point(480, 550);
+            irctcPassLabel.Name = "irctcPassLabel";
+            irctcPassLabel.Size = new Size(70, 20);
+            irctcPassLabel.TabIndex = 44;
+            irctcPassLabel.Text = "Password";
+            // 
+            // irctcPassText
+            // 
+            irctcPassText.Location = new Point(568, 546);
+            irctcPassText.Name = "irctcPassText";
+            irctcPassText.PasswordChar = '*';
+            irctcPassText.Size = new Size(150, 27);
+            irctcPassText.TabIndex = 45;
+            // 
             // saveButton
             // 
             saveButton.BackColor = Color.DimGray;
             saveButton.FlatStyle = FlatStyle.Flat;
             saveButton.ForeColor = Color.White;
-            saveButton.Location = new Point(600, 610);
+            saveButton.Location = new Point(520, 610);
             saveButton.Name = "saveButton";
-            saveButton.Size = new Size(120, 36);
+            saveButton.Size = new Size(80, 36);
             saveButton.TabIndex = 40;
             saveButton.Text = "Save";
             saveButton.UseVisualStyleBackColor = false;
             saveButton.Click += SaveButton_Click;
             // 
+            // bookIrctcButton
+            // 
+            bookIrctcButton.BackColor = Color.FromArgb(0, 120, 215);
+            bookIrctcButton.FlatStyle = FlatStyle.Flat;
+            bookIrctcButton.ForeColor = Color.White;
+            bookIrctcButton.Location = new Point(608, 610);
+            bookIrctcButton.Name = "bookIrctcButton";
+            bookIrctcButton.Size = new Size(100, 36);
+            bookIrctcButton.TabIndex = 46;
+            bookIrctcButton.Text = "Book IRCTC";
+            bookIrctcButton.UseVisualStyleBackColor = false;
+            bookIrctcButton.Click += BookIrctcButton_Click;
+            // 
+            // stopButton
+            // 
+            stopButton.BackColor = Color.IndianRed;
+            stopButton.Enabled = false;
+            stopButton.FlatStyle = FlatStyle.Flat;
+            stopButton.ForeColor = Color.White;
+            stopButton.Location = new Point(716, 610);
+            stopButton.Name = "stopButton";
+            stopButton.Size = new Size(50, 36);
+            stopButton.TabIndex = 47;
+            stopButton.Text = "Stop";
+            stopButton.UseVisualStyleBackColor = false;
+            stopButton.Click += StopButton_Click;
+            // 
             // statusLabel
             // 
             statusLabel.AutoSize = true;
             statusLabel.ForeColor = Color.DimGray;
-            statusLabel.Location = new Point(260, 618);
+            statusLabel.Location = new Point(10, 622);
             statusLabel.Name = "statusLabel";
             statusLabel.Size = new Size(179, 20);
             statusLabel.TabIndex = 41;
@@ -526,9 +592,15 @@
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(734, 660);
+            ClientSize = new Size(780, 660);
             Controls.Add(statusLabel);
+            Controls.Add(stopButton);
+            Controls.Add(bookIrctcButton);
             Controls.Add(saveButton);
+            Controls.Add(irctcPassText);
+            Controls.Add(irctcPassLabel);
+            Controls.Add(irctcUserText);
+            Controls.Add(irctcUserLabel);
             Controls.Add(ticketNameText);
             Controls.Add(ticketNameLabel);
             Controls.Add(confirmBerthsCheck);
@@ -630,6 +702,12 @@
         private Label ticketNameLabel;
         private TextBox ticketNameText;
         private Button saveButton;
+        private Button bookIrctcButton;
+        private Button stopButton;
+        private Label irctcUserLabel;
+        private TextBox irctcUserText;
+        private Label irctcPassLabel;
+        private TextBox irctcPassText;
         private Label statusLabel;
     }
 }

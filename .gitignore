@@ -1,25 +1,34 @@
-## Build results
+## Build outputs
 [Bb]in/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+[Dd]ebug/
+[Rr]elease/
+ReleaseBuild/
+x64/
+x86/
+[Aa]rtifacts/
+publish/
+out/
 
-## Visual Studio / VS Code
+## Visual Studio / VS Code / Rider
 .vs/
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
 *.rsuser
-
-## Rider
+*.VC.db
+*.VC.VC.opendb
+*.csproj.user
 .idea/
 *.sln.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 
 ## NuGet
 *.nupkg
@@ -28,9 +37,10 @@
 !**/[Pp]ackages/build/
 project.lock.json
 project.fragment.lock.json
-artifacts/
+*.nuget.props
+*.nuget.targets
 
-## .NET
+## .NET / compiler leftovers
 *.dll
 *.exe
 *.pdb
@@ -47,6 +57,7 @@ artifacts/
 *.tli
 *.tlh
 *.tmp
+*.temp
 *.tmp_proj
 *.log
 *.vspscc
@@ -62,20 +73,48 @@ artifacts/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+coverage*
+*.coverage
+*.coveragexml
 
-## Playwright
+## Playwright (downloaded browsers / local install)
 playwright/.cache/
+**/[.]playwright/
 playwright-report/
 test-results/
+**/playwright/.local-browsers/
 
-## OS files
+## Tesseract / OCR temp
+*.traineddata
+tessdata/
+**/tessdata/
+
+## App runtime / secrets / local data (do not commit)
+config.json
+**/config.json
+bookings.json
+**/bookings.json
+payment_qr.png
+ticket.png
+*.local.json
+appsettings.Development.json
+secrets.json
+.env
+.env.*
+
+## Train route cache / captcha dumps
+train-route-cache*.json
+**/captcha*.png
+**/captcha*.jpg
+
+## OS junk
 .DS_Store
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+*.lnk
 
-## User-specific / local data
-*.local.json
-appsettings.Development.json
-secrets.json
+## Cursor / editor local
+.cursor/
+*.code-workspace

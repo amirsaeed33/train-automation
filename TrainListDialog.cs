@@ -23,7 +23,7 @@ public sealed class TrainListDialog : Form
         _headerLabel.BackColor = Color.FromArgb(180, 160, 220);
         _headerLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         _headerLabel.Padding = new Padding(8, 6, 8, 6);
-        _headerLabel.Text = "Train List — click a class to load availability";
+        _headerLabel.Text = "Train List — click a class to select for IRCTC booking";
 
         _grid.Dock = DockStyle.Fill;
         _grid.ReadOnly = true;
@@ -162,14 +162,16 @@ public sealed class TrainListDialog : Form
             return;
         }
 
-        var classes = train.ClassLinkKeys.Keys.ToList();
+        var classes = GetTrainClasses(train);
         if (classes.Count == 0)
         {
+            MessageBox.Show(this, "No travel classes found for this train.", "Class",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        var travelClass = GetClickedClass(e.ColumnIndex, e.RowIndex, e.Location) ?? classes[0];
-        if (classes.Count > 1 && GetClickedClass(e.ColumnIndex, e.RowIndex, e.Location) is null)
+        var clicked = GetClickedClass(classes, e.Location);
+        if (classes.Count > 1 && clicked is null)
         {
             using var menu = new ContextMenuStrip();
             foreach (var classCode in classes)
@@ -182,17 +184,25 @@ public sealed class TrainListDialog : Form
             return;
         }
 
-        RaiseClassSelected(train, travelClass);
+        RaiseClassSelected(train, clicked ?? classes[0]);
     }
 
-    private string? GetClickedClass(int columnIndex, int rowIndex, Point clickLocation)
+    private static List<string> GetTrainClasses(TrainResult train)
     {
-        if (_grid.Rows[rowIndex].DataBoundItem is not TrainResult train)
+        if (train.ClassLinkKeys.Count > 0)
         {
-            return null;
+            return train.ClassLinkKeys.Keys.ToList();
         }
 
-        var classes = train.ClassLinkKeys.Keys.ToList();
+        return train.AvailableClasses
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private string? GetClickedClass(IReadOnlyList<string> classes, Point clickLocation)
+    {
         if (classes.Count == 0)
         {
             return null;
@@ -217,11 +227,16 @@ public sealed class TrainListDialog : Form
 
     private void RaiseClassSelected(TrainResult train, string travelClass)
     {
-        if (!train.ClassLinkKeys.TryGetValue(travelClass, out var classLinkKey))
+        string classLinkKey;
+        if (train.ClassLinkKeys.TryGetValue(travelClass, out var existingKey)
+            && !string.IsNullOrWhiteSpace(existingKey))
         {
-            MessageBox.Show(this, $"Class {travelClass} is not available for this train.", "Class", MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            return;
+            classLinkKey = existingKey;
+        }
+        else
+        {
+            // Key can be resolved later from the live Indian Railways page
+            classLinkKey = $"{train.TrainNumber}^{travelClass}";
         }
 
         ClassSelected?.Invoke(this, new TrainClassSelectedEventArgs(train, travelClass, classLinkKey));
