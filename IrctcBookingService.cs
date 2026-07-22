@@ -544,13 +544,13 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         await page.WaitForTimeoutAsync(600);
-        progress?.Report($"Selecting travel date ({dateHint}) then Book Now (main-style)...");
+        progress?.Report($"Selecting travel date ({dateHint}) then Book Now (one click only)...");
 
-        // Same approach as main: Playwright clicks date card (Angular-safe), wait, Book Now once.
-        // Do NOT match bare day numbers (e.g. "22" hits "WL22" on another date).
+        // Main-style: click date once → wait → Book Now once. Never re-click tabs after that
+        // (IRCTC "Sorry!!! Please Try again" is usually double-click / Refresh / tab spam).
         var deadline = DateTime.UtcNow.AddSeconds(Math.Max(60, config.AvailabilityTimeoutSeconds));
-        var refreshMs = Math.Max(800, config.RefreshIntervalMs);
         var attempt = 0;
+        var bookNowAttempted = false;
 
         while (DateTime.UtcNow < deadline)
         {
@@ -563,43 +563,57 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 return false;
             }
 
+            // Already navigated away from list — treat as success for login wait
+            if (!page.Url.Contains("train-list", StringComparison.OrdinalIgnoreCase))
+            {
+                progress?.Report("Left train list — continuing to login.");
+                return true;
+            }
+
+            if (bookNowAttempted)
+            {
+                // Do not click anything else; wait for login / navigation
+                if (await page.Locator("app-login, input[formcontrolname='userid']").CountAsync() > 0)
+                {
+                    progress?.Report("Login popup opened.");
+                    return true;
+                }
+
+                await page.WaitForTimeoutAsync(1000);
+                continue;
+            }
+
             var dateClicked = await TryClickTravelDateCardAsync(
                 page, trainNum, dateHint, dateDay, dateMonth, config.ConfirmBerthsOnly, progress);
 
-            if (dateClicked)
+            if (!dateClicked)
             {
-                progress?.Report($"Selected date ({dateHint}). Waiting for Book Now to enable...");
-                await page.WaitForTimeoutAsync(1000);
-
-                if (await TryClickBookNowOnceAsync(page, trainNum, progress))
-                {
-                    return true;
-                }
-            }
-            else
-            {
-                progress?.Report($"Attempt {attempt}: date card not clicked yet...");
+                progress?.Report($"Attempt {attempt}: waiting for date card...");
+                await page.WaitForTimeoutAsync(1200);
+                continue;
             }
 
-            // Light refresh of selected class tab (like main / extension) — max 3 times
-            if (attempt <= 3)
+            progress?.Report($"Selected date ({dateHint}). Waiting for Book Now...");
+            await page.WaitForTimeoutAsync(1500);
+
+            if (await IsSessionErrorPageAsync(page))
             {
-                await page.EvaluateAsync("""
-                    (trainNum) => {
-                        const roots = Array.from(document.querySelectorAll('app-train-avl-enq'));
-                        const root = roots.find(el => (el.textContent || '').indexOf(trainNum) >= 0);
-                        if (!root) return;
-                        const tab = root.querySelector(
-                            'li[role="tab"][aria-selected="true"] a, li[aria-selected="true"] a, .ui-state-active a');
-                        if (tab) tab.click();
-                    }
-                    """, trainNum);
+                progress?.Report(SessionErrorMessage());
+                return false;
             }
 
-            await page.WaitForTimeoutAsync(refreshMs);
+            bookNowAttempted = true;
+            if (await TryClickBookNowOnceAsync(page, trainNum, progress))
+            {
+                return true;
+            }
+
+            // Book Now click done once — never retry Book Now / tabs (causes session error)
+            progress?.Report("Book Now was clicked once. If login did not open, click Book Now manually (once only).");
+            await page.WaitForTimeoutAsync(2000);
         }
 
-        progress?.Report("Timed out. Manually: click date card → Book Now (one click).");
+        progress?.Report("Timed out on train list. Manually: date → Book Now (single click).");
         return false;
     }
 
@@ -932,9 +946,19 @@ public sealed class IrctcBookingService : IAsyncDisposable
             return false;
         }
 
-        await book.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+        await book.ClickAsync(new LocatorClickOptions { Timeout = 5_000, Trial = false });
+        // Prevent accidental second click handlers
+        try
+        {
+            await book.EvaluateAsync("el => { el.style.pointerEvents = 'none'; }");
+        }
+        catch
+        {
+            // ignore
+        }
+
         progress?.Report("Clicked Book Now (single click).");
-        await page.WaitForTimeoutAsync(2000);
+        await page.WaitForTimeoutAsync(2500);
 
         if (await IsSessionErrorPageAsync(page))
         {

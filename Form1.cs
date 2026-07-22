@@ -50,7 +50,69 @@ public partial class Form1 : Form
                 }
             }
         }
+
+        ApplySavedPassengersToGrid();
+        passengerGrid.CellEndEdit += (_, _) => SaveIrctcConfigFromUi();
+        passengerGrid.CurrentCellDirtyStateChanged += PassengerGrid_CurrentCellDirtyStateChanged;
+        mobileText.Leave += (_, _) => SaveIrctcConfigFromUi();
+        irctcUserText.Leave += (_, _) => SaveIrctcConfigFromUi();
+        irctcPassText.Leave += (_, _) => SaveIrctcConfigFromUi();
     }
+
+    private void PassengerGrid_CurrentCellDirtyStateChanged(object? sender, EventArgs e)
+    {
+        if (passengerGrid.IsCurrentCellDirty)
+        {
+            passengerGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            SaveIrctcConfigFromUi();
+        }
+    }
+
+    private void ApplySavedPassengersToGrid()
+    {
+        if (_config.Passengers.Count == 0)
+        {
+            return;
+        }
+
+        var limit = GetPassengerRowLimit();
+        UpdatePassengerRowCount(Math.Max(limit, Math.Min(6, _config.Passengers.Count)));
+
+        for (var i = 0; i < passengerGrid.Rows.Count && i < _config.Passengers.Count; i++)
+        {
+            var p = _config.Passengers[i];
+            var row = passengerGrid.Rows[i];
+            row.Cells["Sno"].Value = i + 1;
+            row.Cells["Name"].Value = p.Name;
+            row.Cells["Age"].Value = p.Age;
+            row.Cells["Sex"].Value = p.Gender switch
+            {
+                "Female" => "F",
+                "Transgender" => "T",
+                _ => "M"
+            };
+            row.Cells["Berth"].Value = MapBerthToGrid(p.BerthPreference);
+            row.Cells["Food"].Value = MapFoodToGrid(p.FoodPreference);
+            row.Cells["Nationality"].Value = "India-IN";
+        }
+    }
+
+    private static string MapBerthToGrid(string berth) => berth switch
+    {
+        "Lower" => "Lower",
+        "Middle" => "Middle",
+        "Upper" => "Upper",
+        "Side Lower" => "Side Lower",
+        "Side Upper" => "Side Upper",
+        _ => "No Choice"
+    };
+
+    private static string MapFoodToGrid(string food) => food switch
+    {
+        "Veg" => "Veg",
+        "Non Veg" or "Non-Veg" => "Non-Veg",
+        _ => "No Choice"
+    };
 
     private void LoadStations()
     {
@@ -802,6 +864,15 @@ public partial class Form1 : Form
 
     protected override async void OnFormClosed(FormClosedEventArgs e)
     {
+        try
+        {
+            SaveIrctcConfigFromUi();
+        }
+        catch
+        {
+            // ignore save errors on close
+        }
+
         _cts?.Cancel();
         _trainListDialog?.Dispose();
 
