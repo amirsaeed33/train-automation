@@ -57,6 +57,7 @@
             backupBankCombo = new ComboBox();
             autoUpgradeCheck = new CheckBox();
             confirmBerthsCheck = new CheckBox();
+            useBetaViewCheck = new CheckBox();
             ticketNameLabel = new Label();
             ticketNameText = new TextBox();
             saveButton = new Button();
@@ -489,6 +490,16 @@
             confirmBerthsCheck.Text = "Book only if confirm berths allotted.";
             confirmBerthsCheck.UseVisualStyleBackColor = true;
             // 
+            // useBetaViewCheck
+            // 
+            useBetaViewCheck.AutoSize = true;
+            useBetaViewCheck.Location = new Point(530, 586);
+            useBetaViewCheck.Name = "useBetaViewCheck";
+            useBetaViewCheck.Size = new Size(230, 24);
+            useBetaViewCheck.TabIndex = 48;
+            useBetaViewCheck.Text = "Book using IRCTC Beta UI";
+            useBetaViewCheck.UseVisualStyleBackColor = true;
+            // 
             // ticketNameLabel
             // 
             ticketNameLabel.AutoSize = true;
@@ -604,6 +615,7 @@
             Controls.Add(ticketNameText);
             Controls.Add(ticketNameLabel);
             Controls.Add(confirmBerthsCheck);
+            Controls.Add(useBetaViewCheck);
             Controls.Add(autoUpgradeCheck);
             Controls.Add(backupBankCombo);
             Controls.Add(backupBankLabel);
@@ -699,6 +711,7 @@
         private ComboBox backupBankCombo;
         private CheckBox autoUpgradeCheck;
         private CheckBox confirmBerthsCheck;
+        private CheckBox useBetaViewCheck;
         private Label ticketNameLabel;
         private TextBox ticketNameText;
         private Button saveButton;

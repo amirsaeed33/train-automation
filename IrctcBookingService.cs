@@ -14,7 +14,9 @@ public sealed class IrctcBookingService : IAsyncDisposable
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        progress?.Report("Starting visible browser for IRCTC...");
+        progress?.Report(config.UseBetaView
+            ? "Starting browser for IRCTC BETA site..."
+            : "Starting visible browser for IRCTC (classic)...");
         _playwright ??= await Playwright.CreateAsync();
 
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -35,8 +37,44 @@ public sealed class IrctcBookingService : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            progress?.Report("Opening IRCTC...");
-            await page.GotoAsync("https://www.irctc.co.in/nget/train-search", new PageGotoOptions
+            if (config.UseBetaView)
+            {
+                await BookTrainBetaAsync(page, searchSettings, selectedTrain, config, progress, cancellationToken);
+            }
+            else
+            {
+                await BookTrainClassicAsync(page, searchSettings, selectedTrain, config, progress, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            progress?.Report("Automation stopped by user.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Automation stopped: {ex.Message}");
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // expected on Stop
+            }
+        }
+    }
+
+    private static async Task BookTrainClassicAsync(
+        IPage page,
+        TrainSearchSettings searchSettings,
+        TrainResult selectedTrain,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+            progress?.Report("Opening IRCTC classic...");
+            await page.GotoAsync(IrctcSelectors.ClassicTrainSearchUrl, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.DOMContentLoaded,
                 Timeout = 90_000
@@ -57,7 +95,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
                     "Stopped on train list: train/class/date not auto-selected. "
                     + "In the browser pick a train that is listed → class Refresh → date → Book Now, "
                     + "or press Stop and choose a train that appears on IRCTC for this route.");
-                // Do not run passenger/payment automation — wait until user books manually or presses Stop.
                 try
                 {
                     await page.Locator(IrctcSelectors.LoginUserId).First
@@ -99,24 +136,763 @@ public sealed class IrctcBookingService : IAsyncDisposable
             }
 
             await CapturePaymentAndWaitForConfirmationAsync(page, progress, cancellationToken);
-        }
-        catch (OperationCanceledException)
+    }
+
+    /// <summary>
+    /// New IRCTC beta UI (eticket): different search, train cards, BOOK buttons, login modal.
+    /// </summary>
+    private static async Task BookTrainBetaAsync(
+        IPage page,
+        TrainSearchSettings searchSettings,
+        TrainResult selectedTrain,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        progress?.Report("Opening IRCTC beta (eticket)...");
+        await page.GotoAsync(IrctcSelectors.BetaTrainSearchUrl, new PageGotoOptions
         {
-            progress?.Report("Automation stopped by user.");
-            throw;
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 90_000
+        });
+
+        // If redirected to classic home, click Explore beta / go again
+        if (!page.Url.Contains("eticket", StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report("Not on beta yet — trying Explore beta / BETA Version...");
+            try
+            {
+                var betaBtn = page.Locator(IrctcSelectors.BetaExploreButton).First;
+                if (await betaBtn.CountAsync() > 0)
+                {
+                    await betaBtn.ClickAsync();
+                    await page.WaitForTimeoutAsync(2000);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (!page.Url.Contains("eticket", StringComparison.OrdinalIgnoreCase))
+            {
+                await page.GotoAsync(IrctcSelectors.BetaHomeUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 90_000
+                });
+            }
+        }
+
+        await WaitForScheduledSearchAsync(config.ScheduledSearchTime, progress, cancellationToken);
+        await DismissBetaLoginIfOpenAsync(page, progress);
+        await FillBetaJourneySearchAsync(page, searchSettings, progress, cancellationToken);
+
+        var booked = await SelectBetaTrainAndBookAsync(
+            page, selectedTrain, searchSettings, config, progress, cancellationToken);
+
+        if (!booked)
+        {
+            progress?.Report(
+                "Beta: could not auto BOOK. Click Check Availability → BOOK once in the browser; automation will continue at login.");
+            try
+            {
+                await page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First
+                    .WaitForAsync(new LocatorWaitForOptions { Timeout = 300_000 });
+            }
+            catch (TimeoutException)
+            {
+                progress?.Report("No login after 5 min. Press Stop and retry with a train shown on this list.");
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return;
+            }
+        }
+
+        await LoginBetaAsync(page, config, progress, cancellationToken);
+        await FillPassengersAsync(page, config, progress, cancellationToken);
+        await SelectPassengerPaymentTypeAndContinueAsync(page, config, progress, cancellationToken);
+        if (await IsSessionErrorPageAsync(page))
+        {
+            progress?.Report(SessionErrorMessage());
+            await HandleSessionErrorAsync(page, progress, cancellationToken);
+            return;
+        }
+
+        await HandleReviewCaptchaAndContinueAsync(page, progress, cancellationToken);
+        if (await IsSessionErrorPageAsync(page))
+        {
+            progress?.Report(SessionErrorMessage());
+            await HandleSessionErrorAsync(page, progress, cancellationToken);
+            return;
+        }
+
+        await SelectPaymentGatewayAndPayAsync(page, config, progress, cancellationToken);
+        if (await IsSessionErrorPageAsync(page))
+        {
+            progress?.Report(SessionErrorMessage());
+            await HandleSessionErrorAsync(page, progress, cancellationToken);
+            return;
+        }
+
+        await CapturePaymentAndWaitForConfirmationAsync(page, progress, cancellationToken);
+    }
+
+    private static async Task FillBetaJourneySearchAsync(
+        IPage page,
+        TrainSearchSettings settings,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        progress?.Report("Beta: filling From / To / Date / Quota...");
+        await DismissBetaLoginIfOpenAsync(page, progress);
+        await page.Locator(IrctcSelectors.BetaFromCombobox)
+            .First
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = 45_000 });
+        await page.WaitForTimeoutAsync(800);
+
+        await FillBetaStationComboboxAsync(
+            page, IrctcSelectors.BetaFromCombobox, settings.FromStationCode, "From", progress);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await DismissBetaLoginIfOpenAsync(page, progress);
+        await FillBetaStationComboboxAsync(
+            page, IrctcSelectors.BetaToCombobox, settings.ToStationCode, "To", progress);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await DismissBetaLoginIfOpenAsync(page, progress);
+        await SelectBetaTravelDateAsync(page, settings.TravelDate, progress);
+
+        try
+        {
+            var quotaLabel = IrctcQuotaLabels.ToDisplayLabel(settings.Quota);
+            if (!quotaLabel.Equals("GENERAL", StringComparison.OrdinalIgnoreCase))
+            {
+                await DismissBetaLoginIfOpenAsync(page, progress);
+                var quotaBox = page.Locator(IrctcSelectors.BetaQuotaCombobox).First;
+                await quotaBox.ClickAsync();
+                await page.WaitForTimeoutAsync(400);
+                var item = page.Locator($"{IrctcSelectors.BetaStationOption}, li, button, a, span")
+                    .Filter(new LocatorFilterOptions { HasText = quotaLabel })
+                    .First;
+                if (await item.CountAsync() > 0)
+                {
+                    await item.ClickAsync();
+                    progress?.Report($"Beta quota: {quotaLabel}");
+                }
+            }
         }
         catch (Exception ex)
         {
-            progress?.Report($"Automation stopped: {ex.Message}");
-            try
+            progress?.Report($"Beta quota note: {ex.Message}");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await DismissBetaLoginIfOpenAsync(page, progress);
+        progress?.Report("Beta: clicking Search Trains...");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Search Trains" }).ClickAsync();
+
+        try
+        {
+            await page.WaitForURLAsync(
+                url => url.Contains("train-list", StringComparison.OrdinalIgnoreCase),
+                new PageWaitForURLOptions { Timeout = 60_000 });
+            progress?.Report("Beta: train list loaded.");
+        }
+        catch
+        {
+            progress?.Report("Beta: waiting for train list...");
+            await page.WaitForTimeoutAsync(3000);
+        }
+
+        await DismissBetaLoginIfOpenAsync(page, progress);
+    }
+
+    /// <summary>
+    /// Beta sometimes pops the LOGIN modal during search (or focus lands on it).
+    /// Close it so From/To filling can continue; real login happens after BOOK.
+    /// </summary>
+    private static async Task DismissBetaLoginIfOpenAsync(IPage page, IProgress<string>? progress)
+    {
+        try
+        {
+            var dialog = page.Locator(IrctcSelectors.BetaLoginDialog).First;
+            var user = page.Locator(IrctcSelectors.BetaLoginUser).First;
+            var open = (await dialog.CountAsync() > 0 && await dialog.IsVisibleAsync())
+                       || (await user.CountAsync() > 0 && await user.IsVisibleAsync());
+            if (!open)
             {
-                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return;
             }
-            catch (OperationCanceledException)
+
+            progress?.Report("Beta: LOGIN modal appeared early — closing it (login after BOOK)...");
+            var close = page.Locator(IrctcSelectors.BetaLoginClose).First;
+            if (await close.CountAsync() > 0 && await close.IsVisibleAsync())
             {
-                // expected on Stop
+                await close.ClickAsync(new LocatorClickOptions { Timeout = 3_000 });
+            }
+            else
+            {
+                await page.Keyboard.PressAsync("Escape");
+            }
+
+            await page.WaitForTimeoutAsync(500);
+
+            // Confirm closed
+            if (await user.CountAsync() > 0 && await user.IsVisibleAsync())
+            {
+                await page.Keyboard.PressAsync("Escape");
+                await page.WaitForTimeoutAsync(400);
             }
         }
+        catch
+        {
+            // ignore — best effort
+        }
+    }
+
+    private static async Task FillBetaStationComboboxAsync(
+        IPage page,
+        string comboboxSelector,
+        string stationCode,
+        string label,
+        IProgress<string>? progress)
+    {
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            await DismissBetaLoginIfOpenAsync(page, progress);
+
+            var box = page.Locator(comboboxSelector).First;
+            await box.ClickAsync();
+            await page.WaitForTimeoutAsync(350);
+
+            // Login may steal focus right after opening the combobox
+            var loginUser = page.Locator(IrctcSelectors.BetaLoginUser).First;
+            if (await loginUser.CountAsync() > 0 && await loginUser.IsVisibleAsync())
+            {
+                await DismissBetaLoginIfOpenAsync(page, progress);
+                continue;
+            }
+
+            var search = page.Locator(IrctcSelectors.BetaStationSearchInput).First;
+            try
+            {
+                await search.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 8_000
+                });
+            }
+            catch
+            {
+                progress?.Report($"Beta {label}: search box missing (attempt {attempt})...");
+                await DismissBetaLoginIfOpenAsync(page, progress);
+                continue;
+            }
+
+            await search.ClickAsync();
+            await search.FillAsync("");
+            await search.PressSequentiallyAsync(stationCode, new LocatorPressSequentiallyOptions { Delay = 70 });
+            await page.WaitForTimeoutAsync(900);
+
+            // If login stole keystrokes into Username, dismiss and retry
+            if (await loginUser.CountAsync() > 0 && await loginUser.IsVisibleAsync())
+            {
+                progress?.Report($"Beta {label}: LOGIN interrupted typing — retrying...");
+                await DismissBetaLoginIfOpenAsync(page, progress);
+                continue;
+            }
+
+            var option = page.Locator(IrctcSelectors.BetaStationOption)
+                .Filter(new LocatorFilterOptions { HasText = stationCode })
+                .First;
+            try
+            {
+                await option.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 12_000
+                });
+                await option.ClickAsync();
+            }
+            catch
+            {
+                progress?.Report($"Beta {label}: no dropdown match for {stationCode}, trying Enter...");
+                await page.Keyboard.PressAsync("ArrowDown");
+                await page.Keyboard.PressAsync("Enter");
+            }
+
+            await page.WaitForTimeoutAsync(400);
+            progress?.Report($"Beta {label}: {stationCode}");
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Beta could not fill {label} station ({stationCode}) — LOGIN modal kept interrupting.");
+    }
+
+    private static async Task SelectBetaTravelDateAsync(
+        IPage page,
+        DateTime travelDate,
+        IProgress<string>? progress)
+    {
+        var dateText = travelDate.ToString("dd MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        try
+        {
+            // Skip if already showing the target date
+            var dateBtn = page.Locator(IrctcSelectors.BetaDateButton).First;
+            var current = (await dateBtn.InnerTextAsync()).Replace("\n", " ").Trim();
+            if (current.Contains(dateText, StringComparison.OrdinalIgnoreCase)
+                || current.Contains(travelDate.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                progress?.Report($"Beta date already set: {dateText}");
+                return;
+            }
+
+            await dateBtn.ClickAsync();
+            await page.Locator(IrctcSelectors.BetaCalendarPanel).First
+                .WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible, Timeout = 8_000 });
+
+            var targetMonth = travelDate.ToString("MMMM", System.Globalization.CultureInfo.InvariantCulture);
+            var targetYear = travelDate.Year.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var day = travelDate.Day.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            for (var i = 0; i < 18; i++)
+            {
+                var month = (await page.Locator(IrctcSelectors.BetaCalendarMonth).First.InnerTextAsync()).Trim();
+                var year = (await page.Locator(IrctcSelectors.BetaCalendarYear).First.InnerTextAsync()).Trim();
+                if (month.Equals(targetMonth, StringComparison.OrdinalIgnoreCase)
+                    && year.Equals(targetYear, StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                var shown = DateTime.TryParseExact(
+                    $"{month} {year}",
+                    "MMMM yyyy",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out var shownMonth)
+                    ? shownMonth
+                    : DateTime.MinValue;
+
+                if (shown != DateTime.MinValue && shown > new DateTime(travelDate.Year, travelDate.Month, 1))
+                {
+                    await page.Locator(IrctcSelectors.BetaCalendarPrev).First.ClickAsync();
+                }
+                else
+                {
+                    await page.Locator(IrctcSelectors.BetaCalendarNext).First.ClickAsync();
+                }
+
+                await page.WaitForTimeoutAsync(250);
+            }
+
+            var cells = page.Locator(IrctcSelectors.BetaCalendarDayCells);
+            var count = await cells.CountAsync();
+            ILocator? dayCell = null;
+            for (var i = 0; i < count; i++)
+            {
+                var cell = cells.Nth(i);
+                var text = (await cell.InnerTextAsync()).Trim();
+                if (text == day)
+                {
+                    dayCell = cell;
+                    break;
+                }
+            }
+
+            if (dayCell is null)
+            {
+                throw new InvalidOperationException($"Day {day} not found in beta calendar.");
+            }
+
+            await dayCell.ClickAsync();
+            progress?.Report($"Beta date: {dateText}");
+            await page.WaitForTimeoutAsync(400);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta date note: {ex.Message} (leaving calendar default)");
+            try { await page.Keyboard.PressAsync("Escape"); } catch { /* ignore */ }
+        }
+    }
+
+    private static async Task<bool> SelectBetaTrainAndBookAsync(
+        IPage page,
+        TrainResult selectedTrain,
+        TrainSearchSettings settings,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var trainNum = NormalizeTrainNumber(selectedTrain.TrainNumber);
+        var classCode = NormalizeClassCode(
+            string.IsNullOrWhiteSpace(settings.PreferredClass)
+                ? config.PreferredClass
+                : settings.PreferredClass);
+
+        progress?.Report($"Beta: on train list — looking for {trainNum} / {classCode}...");
+        await DismissBetaLoginIfOpenAsync(page, progress);
+
+        // Wait for at least one Check Availability control (button or clickable text)
+        try
+        {
+            await page.GetByText("Check Availability", new() { Exact = false })
+                .First
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 45_000 });
+        }
+        catch (TimeoutException)
+        {
+            progress?.Report("Beta: no Check Availability on page yet.");
+        }
+
+        await page.WaitForTimeoutAsync(800);
+
+        // Resolve which train to use (exact → visible list fallback messaging)
+        var resolvedTrain = await ResolveBetaTrainNumberAsync(page, trainNum, progress);
+        if (string.IsNullOrWhiteSpace(resolvedTrain))
+        {
+            return false;
+        }
+
+        trainNum = resolvedTrain;
+
+        // 1) Click class chip + Check Availability via DOM (Angular-safe)
+        var checkJson = await page.EvaluateAsync<string>("""
+            ({ trainNum, classCode }) => {
+              const dig = (s) => (s || '').replace(/\D/g, '');
+              const want = dig(trainNum);
+              const nodes = Array.from(document.querySelectorAll('button, a, div, span, li'));
+              const checks = nodes.filter(el => {
+                const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                return /^check\s*avail/i.test(t) && t.length < 36;
+              });
+              const visibleTrains = [];
+              for (const btn of checks) {
+                let card = btn;
+                for (let i = 0; i < 14 && card; i++) {
+                  const tx = card.textContent || '';
+                  if (/train\s*schedule/i.test(tx) && /check\s*avail/i.test(tx) && tx.length < 5000) break;
+                  card = card.parentElement;
+                }
+                if (!card) continue;
+                const cardText = card.textContent || '';
+                const m = cardText.match(/\b(\d{4,5})\b/);
+                if (m) visibleTrains.push(m[1]);
+                if (dig(cardText).indexOf(want) < 0 && cardText.indexOf(trainNum) < 0) continue;
+
+                // Prefer exact class chip click
+                const chips = Array.from(card.querySelectorAll('button, a, span, div'));
+                for (const c of chips) {
+                  const ct = (c.textContent || '').replace(/\s+/g, ' ').trim();
+                  if (ct === classCode) {
+                    try { c.click(); } catch (e) {}
+                    break;
+                  }
+                }
+
+                try { btn.scrollIntoView({ block: 'center' }); } catch (e) {}
+                try { btn.click(); } catch (e) {}
+                return JSON.stringify({ ok: true, step: 'check', train: trainNum, visible: visibleTrains.slice(0, 15) });
+              }
+              return JSON.stringify({ ok: false, step: 'no-check', visible: [...new Set(visibleTrains)].slice(0, 15) });
+            }
+            """, new { trainNum, classCode });
+
+        var checkResult = ParseBetaJson(checkJson);
+        if (checkResult.Ok)
+        {
+            progress?.Report($"Beta: Check Availability clicked for {trainNum}.");
+        }
+        else
+        {
+            progress?.Report(
+                $"Beta: could not click Check Availability for {trainNum}. "
+                + $"Visible trains: {string.Join(", ", checkResult.Visible)}. Trying Playwright fallback...");
+
+            // Playwright fallback: Check Availability near train text
+            try
+            {
+                var card = page.Locator("div, article, section, li")
+                    .Filter(new LocatorFilterOptions { HasText = trainNum })
+                    .Filter(new LocatorFilterOptions { HasText = "Check Availability" })
+                    .Last;
+                await card.ScrollIntoViewIfNeededAsync();
+                var classEl = card.GetByText(classCode, new() { Exact = true }).First;
+                if (await classEl.CountAsync() > 0)
+                {
+                    await classEl.ClickAsync(new LocatorClickOptions { Timeout = 3_000, Force = true });
+                }
+
+                await card.GetByText("Check Availability", new() { Exact = false }).First
+                    .ClickAsync(new LocatorClickOptions { Timeout = 5_000, Force = true });
+                checkResult = new BetaDomResult { Ok = true };
+                progress?.Report("Beta: Check Availability clicked (Playwright).");
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"Beta Check Availability failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await page.WaitForTimeoutAsync(2200);
+        await DismissBetaLoginIfOpenAsync(page, progress);
+
+        // 2) Wait for BOOK and click for preferred class
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report($"Beta: looking for BOOK ({classCode}) attempt {attempt}/10...");
+
+            var bookJson = await page.EvaluateAsync<string>("""
+                ({ trainNum, classCode }) => {
+                  const buttons = Array.from(document.querySelectorAll('button, a, div, span'));
+                  const books = buttons.filter(el => {
+                    const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+                    return t === 'BOOK' || t === 'BOOK NOW';
+                  });
+                  if (books.length === 0) {
+                    return JSON.stringify({ ok: false, step: 'no-book', count: 0 });
+                  }
+
+                  const classHints = {
+                    'SL': ['SL', 'SLEEPER'],
+                    '3A': ['3A', 'AC 3', 'AC3', 'THIRD'],
+                    '2A': ['2A', 'AC 2', 'AC2', 'SECOND'],
+                    '1A': ['1A', 'FIRST', 'AC FIRST'],
+                    '3E': ['3E'],
+                    '2S': ['2S'],
+                    'CC': ['CC', 'CHAIR']
+                  };
+                  const hints = classHints[classCode] || [classCode];
+
+                  for (const b of books) {
+                    let row = b;
+                    let ctx = '';
+                    for (let i = 0; i < 7 && row; i++) {
+                      const t = (row.textContent || '').trim();
+                      if (t.length > 15 && t.length < 2000) ctx = t;
+                      row = row.parentElement;
+                    }
+                    const up = ctx.toUpperCase();
+                    const classOk = hints.some(h => up.indexOf(h) >= 0);
+                    if (!classOk && books.length > 1) continue;
+                    try { b.scrollIntoView({ block: 'center' }); } catch (e) {}
+                    try { b.click(); } catch (e) {}
+                    return JSON.stringify({ ok: true, step: 'book', classOk: classOk });
+                  }
+
+                  // fallback first BOOK
+                  try { books[0].scrollIntoView({ block: 'center' }); books[0].click(); } catch (e) {}
+                  return JSON.stringify({ ok: true, step: 'book-first', count: books.length });
+                }
+                """, new { trainNum, classCode });
+
+            var bookResult = ParseBetaJson(bookJson);
+            if (bookResult.Ok)
+            {
+                progress?.Report("Beta: BOOK clicked. Waiting for login...");
+                await page.WaitForTimeoutAsync(1500);
+                return true;
+            }
+
+            // Availability still loading — optionally re-click Check Availability once
+            if (attempt == 4 || attempt == 7)
+            {
+                await page.EvaluateAsync("""
+                    (trainNum) => {
+                      const dig = (s) => (s || '').replace(/\D/g, '');
+                      const want = dig(trainNum);
+                      const nodes = Array.from(document.querySelectorAll('button, a, div, span'));
+                      for (const el of nodes) {
+                        const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                        if (!/^check\s*avail/i.test(t) || t.length >= 36) continue;
+                        let card = el;
+                        for (let i = 0; i < 12 && card; i++) {
+                          if ((card.textContent || '').indexOf(trainNum) >= 0 || dig(card.textContent || '').indexOf(want) >= 0) {
+                            el.click();
+                            return true;
+                          }
+                          card = card.parentElement;
+                        }
+                      }
+                      return false;
+                    }
+                    """, trainNum);
+            }
+
+            await page.WaitForTimeoutAsync(1500);
+        }
+
+        progress?.Report(
+            "Beta: BOOK still not available. In browser click Check Availability → BOOK once for your class.");
+        return false;
+    }
+
+    private static async Task<string?> ResolveBetaTrainNumberAsync(
+        IPage page,
+        string trainNum,
+        IProgress<string>? progress)
+    {
+        var visible = await ListBetaVisibleTrainNumbersAsync(page);
+        if (visible.Count == 0)
+        {
+            // Page text dump may still have trains before buttons hydrate
+            await page.WaitForTimeoutAsync(1500);
+            visible = await ListBetaVisibleTrainNumbersAsync(page);
+        }
+
+        if (visible.Any(v => NormalizeTrainNumber(v) == trainNum || v.Contains(trainNum, StringComparison.Ordinal)))
+        {
+            return trainNum;
+        }
+
+        // Exact text present somewhere?
+        try
+        {
+            if (await page.GetByText(trainNum, new() { Exact = false }).CountAsync() > 0)
+            {
+                return trainNum;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        progress?.Report(
+            $"Beta: train {trainNum} not on this IRCTC list. Visible: "
+            + (visible.Count == 0 ? "(none detected)" : string.Join(", ", visible))
+            + ". Pick a listed train in the app, or click Check Availability → BOOK manually.");
+        return null;
+    }
+
+    private sealed class BetaDomResult
+    {
+        public bool Ok { get; set; }
+        public List<string> Visible { get; set; } = [];
+    }
+
+    private static BetaDomResult ParseBetaJson(string? json)
+    {
+        var result = new BetaDomResult();
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return result;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("ok", out var ok))
+            {
+                result.Ok = ok.GetBoolean();
+            }
+
+            if (root.TryGetProperty("visible", out var vis) && vis.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var x in vis.EnumerateArray())
+                {
+                    var s = x.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        result.Visible.Add(s);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // ignore parse errors
+        }
+
+        return result;
+    }
+
+    private static async Task<List<string>> ListBetaVisibleTrainNumbersAsync(IPage page)
+    {
+        try
+        {
+            var json = await page.EvaluateAsync<string>("""
+                () => {
+                  const text = document.body ? document.body.innerText : '';
+                  const matches = text.match(/\b\d{5}\b/g) || [];
+                  const unique = [...new Set(matches)].slice(0, 25);
+                  return JSON.stringify(unique);
+                }
+                """);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return [];
+            }
+
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+
+    private static async Task LoginBetaAsync(
+        IPage page,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        progress?.Report("Beta: waiting for LOGIN modal...");
+        var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
+
+        try
+        {
+            await user.WaitForAsync(new LocatorWaitForOptions { Timeout = 180_000 });
+        }
+        catch (TimeoutException)
+        {
+            progress?.Report("Beta login not found — trying classic login selectors...");
+            await LoginAsync(page, config, progress, cancellationToken, waitLonger: true);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(config.Credentials.Username) ||
+            string.IsNullOrWhiteSpace(config.Credentials.Password))
+        {
+            progress?.Report("ERROR: Username/password empty.");
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return;
+        }
+
+        await user.ClickAsync();
+        await user.FillAsync("");
+        await user.PressSequentiallyAsync(config.Credentials.Username, new LocatorPressSequentiallyOptions { Delay = 40 });
+
+        var pass = page.Locator($"{IrctcSelectors.BetaLoginPassword}, {IrctcSelectors.LoginPassword}").First;
+        await pass.ClickAsync();
+        await pass.FillAsync("");
+        await pass.PressSequentiallyAsync(config.Credentials.Password, new LocatorPressSequentiallyOptions { Delay = 40 });
+
+        progress?.Report("Beta: clicking LOGIN...");
+        var loginBtn = page.Locator($"{IrctcSelectors.BetaLoginButton}, {IrctcSelectors.LoginSignIn}").First;
+        await loginBtn.ClickAsync();
+
+        progress?.Report("ACTION REQUIRED: Enter OTP/captcha on beta if asked.");
+        try
+        {
+            await page.Locator(IrctcSelectors.PassengerName).First
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 300_000 });
+        }
+        catch
+        {
+            progress?.Report("Waiting for passenger page after beta login...");
+            await Task.Delay(3000, cancellationToken);
+        }
+
+        progress?.Report("Beta login done (or continue manually if still on login).");
     }
 
     private static async Task DismissLanguagePopupAsync(IPage page, IProgress<string>? progress)

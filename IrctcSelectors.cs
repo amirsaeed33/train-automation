@@ -55,6 +55,38 @@ public static class IrctcSelectors
 
     public const string PaymentOptions = "app-payment-options, label:has-text('BHIM/UPI')";
     public const string PayButton = "button:has-text('Pay & Book'), button:has-text('Pay'), .btn-primary";
+
+    // Classic home
+    public const string ClassicTrainSearchUrl = "https://www.irctc.co.in/nget/train-search";
+
+    // Beta (new IRCTC UI)
+    public const string BetaHomeUrl = "https://www.irctc.co.in/eticket/";
+    public const string BetaTrainSearchUrl = "https://www.irctc.co.in/eticket/train-search";
+    public const string BetaExploreButton = "button:has-text('Explore beta'), a:has-text('Explore beta'), button:has-text('BETA Version'), a:has-text('BETA Version')";
+    // Beta uses Angular field-box comboboxes — no <input> until the box is clicked.
+    public const string BetaFromCombobox = "[role='combobox'][aria-label='From station']";
+    public const string BetaToCombobox = "[role='combobox'][aria-label='To station']";
+    public const string BetaStationSearchInput = "input[placeholder*='Type to search']";
+    public const string BetaStationOption = "[role='option']";
+    public const string BetaDateButton = "[role='button'][aria-label='Select travel date']";
+    public const string BetaQuotaCombobox = "[role='combobox'][aria-label='Quota']";
+    public const string BetaSearchButton = "button:has-text('Search Trains'), [role='button']:has-text('Search Trains')";
+    public const string BetaCalendarPanel = ".custom-calendar-panel, .ui-datepicker";
+    public const string BetaCalendarNext = "a.ui-datepicker-next";
+    public const string BetaCalendarPrev = "a.ui-datepicker-prev";
+    public const string BetaCalendarMonth = ".ui-datepicker-month";
+    public const string BetaCalendarYear = ".ui-datepicker-year";
+    public const string BetaCalendarDayCells = ".ui-datepicker-calendar td:not(.ui-datepicker-other-month):not(.ui-state-disabled)";
+    public const string BetaLoginDialog = ".login-dialog, .login-dialog-custom, #newLogin, [role='dialog'].login-dialog";
+    public const string BetaLoginClose = ".login-dialog button.close-btn, .login-wrapper button.close-btn, .login-dialog-custom button.close-btn";
+    public const string BetaLoginUser = ".login-dialog input[placeholder*='Username'], .login-dialog input[placeholder*='Enter Username'], .login-wrapper input[placeholder*='Username'], input[placeholder='Enter Username']";
+    public const string BetaLoginPassword = ".login-dialog input[placeholder*='password'], .login-dialog input[placeholder*='Password'], .login-wrapper input[type='password'], input[placeholder='Enter password']";
+    // Prefer modal LOGIN only — do NOT match header .btn-login
+    public const string BetaLoginButton = ".login-dialog button:has-text('LOGIN'), .login-wrapper button:has-text('LOGIN'), [role='dialog'] button:has-text('LOGIN')";
+    public const string BetaHeaderLoginButton = "button.btn-login";
+    public const string BetaBookButton = "button:has-text('BOOK'), button:has-text('Book')";
+    public const string BetaCheckAvailability = "button:has-text('Check Avail'), button:has-text('Check Availability')";
+    public const string BetaTrainCard = ".train-card, .train-list-card, app-train-list .card, [class*='train-card'], [class*='trainCard']";
 }
 
 /// <summary>Maps UI quota codes to IRCTC dropdown labels.</summary>

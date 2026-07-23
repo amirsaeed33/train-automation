@@ -29,6 +29,12 @@ public sealed class BookingConfiguration
     public bool ConfirmBerthsOnly { get; set; }
     public bool AutoUpgrade { get; set; }
 
+    /// <summary>
+    /// When true, book on the new IRCTC beta site (https://www.irctc.co.in/eticket/).
+    /// When false, use the classic nget train-search UI.
+    /// </summary>
+    public bool UseBetaView { get; set; }
+
     /// <summary>Milliseconds between availability refresh attempts.</summary>
     public int RefreshIntervalMs { get; set; } = 1500;
 
@@ -100,6 +106,7 @@ public sealed class BookingConfiguration
                 MobileNumber = MobileNumber,
                 ConfirmBerthsOnly = ConfirmBerthsOnly,
                 AutoUpgrade = AutoUpgrade,
+                UseBetaView = UseBetaView,
                 RefreshIntervalMs = RefreshIntervalMs,
                 AvailabilityTimeoutSeconds = AvailabilityTimeoutSeconds,
                 ScheduledSearchTime = ScheduledSearchTime

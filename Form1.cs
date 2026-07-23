@@ -36,6 +36,7 @@ public partial class Form1 : Form
 
         confirmBerthsCheck.Checked = _config.ConfirmBerthsOnly;
         autoUpgradeCheck.Checked = _config.AutoUpgrade;
+        useBetaViewCheck.Checked = _config.UseBetaView;
 
         if (!string.IsNullOrWhiteSpace(_config.PaymentMethod))
         {
@@ -623,6 +624,7 @@ public partial class Form1 : Form
         _config.MobileNumber = mobileText.Text.Trim();
         _config.ConfirmBerthsOnly = confirmBerthsCheck.Checked;
         _config.AutoUpgrade = autoUpgradeCheck.Checked;
+        _config.UseBetaView = useBetaViewCheck.Checked;
         _config.PaymentMethod = gatewayCombo.SelectedItem?.ToString() ?? "BHIM/UPI";
         _config.PaymentProvider = priorBankCombo.SelectedItem?.ToString() ?? "PAYTM";
         _config.PreferredClass = classCombo.SelectedItem?.ToString() ?? _config.PreferredClass;
