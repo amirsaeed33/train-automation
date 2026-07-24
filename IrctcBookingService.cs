@@ -186,18 +186,12 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
         await WaitForScheduledSearchAsync(config.ScheduledSearchTime, progress, cancellationToken);
 
-        // If LOGIN modal is already on train-search → login now, then search.
-        // If not → search first; login after BOOK (existing path).
-        await page.WaitForTimeoutAsync(1200);
-        var loggedInEarly = await LoginBetaIfModalPresentAsync(
-            page, config, progress, cancellationToken, waitMs: 4_000);
-        if (loggedInEarly)
+        // If LOGIN popup is already on search (blocks From/To) → fill & sign in now.
+        // If not → search first; login after BOOK if the modal appears then.
+        await page.WaitForTimeoutAsync(1000);
+        if (await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 3_000))
         {
-            progress?.Report("Beta: logged in on search page — continuing to fill search...");
-        }
-        else
-        {
-            progress?.Report("Beta: no LOGIN on search page — will search first, login after BOOK if needed.");
+            progress?.Report("Beta: logged in on search page — continuing From/To...");
         }
 
         await FillBetaJourneySearchAsync(page, searchSettings, config, progress, cancellationToken);
@@ -217,6 +211,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             return;
         }
 
+        // LOGIN shows after BOOK — don't wait here; search/select first
         var booked = await SelectBetaTrainAndBookAsync(
             page, selectedTrain, searchSettings, config, progress, cancellationToken);
 
@@ -224,17 +219,15 @@ public sealed class IrctcBookingService : IAsyncDisposable
         {
             progress?.Report(
                 "Beta: could not auto BOOK. Click Check Availability → BOOK once in the browser; automation will continue at login.");
-            try
-            {
-                await page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First
-                    .WaitForAsync(new LocatorWaitForOptions { Timeout = 300_000 });
-            }
-            catch (TimeoutException)
-            {
-                progress?.Report("No login after 5 min. Press Stop and retry with a train shown on this list.");
-                await Task.Delay(Timeout.Infinite, cancellationToken);
-                return;
-            }
+        }
+
+        // LOGIN modal appears after BOOK (still on train-list URL) — fill immediately
+        if (await IsSessionErrorPageAsync(page)
+            || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report(SessionErrorMessage());
+            await HandleSessionErrorAsync(page, progress, cancellationToken);
+            return;
         }
 
         await LoginBetaAsync(page, config, progress, cancellationToken);
@@ -280,6 +273,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         progress?.Report("Beta: filling From / To / Date / Quota...");
+        // LOGIN can pop over From/To — sign in if present, never Escape/close
         await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 800);
         await page.Locator(IrctcSelectors.BetaFromCombobox)
             .First
@@ -291,13 +285,13 @@ public sealed class IrctcBookingService : IAsyncDisposable
             config, progress, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
+        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 400);
         await FillBetaStationComboboxAsync(
             page, IrctcSelectors.BetaToCombobox, settings.ToStationCode, "To",
             config, progress, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
+        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 400);
         await SelectBetaTravelDateAsync(page, settings.TravelDate, progress);
 
         try
@@ -305,7 +299,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
             var quotaLabel = IrctcQuotaLabels.ToDisplayLabel(settings.Quota);
             if (!quotaLabel.Equals("GENERAL", StringComparison.OrdinalIgnoreCase))
             {
-                await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
                 var quotaBox = page.Locator(IrctcSelectors.BetaQuotaCombobox).First;
                 await quotaBox.ClickAsync();
                 await page.WaitForTimeoutAsync(400);
@@ -366,8 +359,8 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
         else
         {
-            progress?.Report("Beta: train list loaded — waiting before any clicks...");
-            await page.WaitForTimeoutAsync(2000);
+            progress?.Report("Beta: train list loaded...");
+            await page.WaitForTimeoutAsync(600);
         }
     }
 
@@ -384,7 +377,9 @@ public sealed class IrctcBookingService : IAsyncDisposable
     {
         try
         {
-            var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
+            var user = page.GetByPlaceholder("Enter Username")
+                .Or(page.Locator("input[placeholder*='Username']"))
+                .First;
             try
             {
                 await user.WaitForAsync(new LocatorWaitForOptions
@@ -398,7 +393,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 return false;
             }
 
-            progress?.Report("Beta: LOGIN modal open — entering credentials...");
+            progress?.Report("Beta: LOGIN appeared — entering username/password...");
             await SubmitBetaLoginCredentialsAsync(
                 page, config, progress, cancellationToken, waitForPassengerPage: false);
             return true;
@@ -429,23 +424,141 @@ public sealed class IrctcBookingService : IAsyncDisposable
             return;
         }
 
-        var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
-        await user.ClickAsync();
-        await user.FillAsync("");
-        await user.PressSequentiallyAsync(
-            config.Credentials.Username, new LocatorPressSequentiallyOptions { Delay = 40 });
+        // Prefer Angular-safe DOM fill (Playwright Fill often does not update beta form controls)
+        progress?.Report("Beta: filling LOGIN via DOM...");
+        var filled = await page.EvaluateAsync<bool>("""
+            ({ username, password }) => {
+              const visible = (el) => {
+                if (!el) return false;
+                const r = el.getBoundingClientRect();
+                const st = window.getComputedStyle(el);
+                return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+              };
+              const setVal = (el, value) => {
+                el.focus();
+                const proto = window.HTMLInputElement.prototype;
+                const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                if (desc && desc.set) desc.set.call(el, value);
+                else el.value = value;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              };
+              const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+              const user = inputs.find(i => {
+                const ph = (i.getAttribute('placeholder') || '').toLowerCase();
+                const name = (i.getAttribute('formcontrolname') || '').toLowerCase();
+                const aria = (i.getAttribute('aria-label') || '').toLowerCase();
+                return ph.includes('username') || ph.includes('user name') || name === 'userid' || aria.includes('username');
+              });
+              const pass = inputs.find(i => {
+                const ph = (i.getAttribute('placeholder') || '').toLowerCase();
+                const name = (i.getAttribute('formcontrolname') || '').toLowerCase();
+                const type = (i.getAttribute('type') || '').toLowerCase();
+                return type === 'password' || ph.includes('password') || name === 'password';
+              });
+              if (!user || !pass) return false;
+              setVal(user, username);
+              setVal(pass, password);
+              return true;
+            }
+            """, new { username = config.Credentials.Username, password = config.Credentials.Password });
 
-        var pass = page.Locator($"{IrctcSelectors.BetaLoginPassword}, {IrctcSelectors.LoginPassword}").First;
-        await pass.ClickAsync();
-        await pass.FillAsync("");
-        await pass.PressSequentiallyAsync(
-            config.Credentials.Password, new LocatorPressSequentiallyOptions { Delay = 40 });
+        if (!filled)
+        {
+            progress?.Report("Beta: DOM fill missed fields — trying Playwright placeholders...");
+            var user = page.GetByPlaceholder("Enter Username").Or(page.GetByPlaceholder("Username")).First;
+            await user.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible, Timeout = 10_000 });
+            await user.ClickAsync();
+            await user.FillAsync(config.Credentials.Username);
+            var pass = page.GetByPlaceholder("Enter password").Or(page.GetByPlaceholder("Password")).First;
+            await pass.ClickAsync();
+            await pass.FillAsync(config.Credentials.Password);
+        }
+        else
+        {
+            progress?.Report("Beta: username/password filled.");
+        }
 
-        progress?.Report("Beta: clicking LOGIN...");
-        var loginBtn = page.Locator($"{IrctcSelectors.BetaLoginButton}, {IrctcSelectors.LoginSignIn}").First;
-        await loginBtn.ClickAsync();
+        await page.WaitForTimeoutAsync(400);
+        progress?.Report("Beta: clicking LOGIN once...");
 
-        progress?.Report("ACTION REQUIRED: Enter OTP/captcha on beta if asked.");
+        // ONE click only — IRCTC kills the session on double-click / double-submit
+        var clicked = await page.EvaluateAsync<bool>("""
+            () => {
+              const norm = (el) => (el.textContent || el.value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+              const isHeaderLogin = (b) => String(b.className || '').includes('btn-login');
+
+              const userInput = Array.from(document.querySelectorAll('input')).find(i => {
+                const ph = (i.getAttribute('placeholder') || '').toLowerCase();
+                return ph.includes('username') || ph.includes('user name');
+              });
+              let root = userInput;
+              for (let i = 0; i < 12 && root; i++) {
+                root = root.parentElement;
+                if (!root) break;
+                const cls = String(root.className || '').toLowerCase();
+                if (cls.includes('login') || cls.includes('dialog') || cls.includes('modal') ||
+                    root.getAttribute('role') === 'dialog') {
+                  break;
+                }
+              }
+              root = root || document.body;
+
+              const scrollables = [root, ...root.querySelectorAll('*')];
+              for (const el of scrollables) {
+                try {
+                  if (el.scrollHeight > el.clientHeight + 20) el.scrollTop = el.scrollHeight;
+                } catch (e) {}
+              }
+
+              const candidates = Array.from(root.querySelectorAll('button, a, input[type=submit]'))
+                .filter(el => {
+                  const t = norm(el);
+                  if (t !== 'LOGIN' && t !== 'SIGN IN') return false;
+                  if (isHeaderLogin(el)) return false;
+                  return true;
+                });
+
+              candidates.sort((a, b) => {
+                const score = (el) => el.tagName === 'BUTTON' || el.tagName === 'INPUT' ? 0 : 1;
+                return score(a) - score(b);
+              });
+
+              const btn = candidates[0];
+              if (!btn) return false;
+              try { btn.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (e) {}
+              // Single native click — do not also dispatch MouseEvents (that = double-click to IRCTC)
+              btn.click();
+              return true;
+            }
+            """);
+
+        if (!clicked)
+        {
+            progress?.Report("Beta: LOGIN button not found via DOM — one Playwright click...");
+            try
+            {
+                var loginBtn = page.Locator(IrctcSelectors.BetaLoginButton).First;
+                await loginBtn.ScrollIntoViewIfNeededAsync();
+                // Force + no retry spam: one click
+                await loginBtn.ClickAsync(new LocatorClickOptions
+                {
+                    Timeout = 8_000,
+                    Force = true
+                });
+                clicked = true;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"Beta: could not click LOGIN ({ex.Message}). Click LOGIN once yourself.");
+            }
+        }
+        else
+        {
+            progress?.Report("Beta: LOGIN clicked (once).");
+        }
+
+        progress?.Report("ACTION REQUIRED: Enter OTP if IRCTC asks, then wait for passenger page...");
 
         if (waitForPassengerPage)
         {
@@ -453,10 +566,10 @@ public sealed class IrctcBookingService : IAsyncDisposable
             return;
         }
 
-        // Early login on train-search: wait until modal closes (not passenger page yet).
+        // Early login: wait until username field hides
         try
         {
-            await user.WaitForAsync(new LocatorWaitForOptions
+            await page.GetByPlaceholder("Enter Username").First.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Hidden,
                 Timeout = 300_000
@@ -465,15 +578,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
         catch
         {
-            var heading = page.GetByRole(AriaRole.Heading, new() { Name = "LOGIN" });
-            if (await heading.CountAsync() == 0 || !await heading.First.IsVisibleAsync())
-            {
-                progress?.Report("Beta: LOGIN heading gone — treating as signed in.");
-            }
-            else
-            {
-                progress?.Report("Beta: LOGIN still open after wait — continue; you can finish OTP manually.");
-            }
+            progress?.Report("Beta: LOGIN still open (OTP?) — finish manually if needed, then continue.");
         }
 
         await page.WaitForTimeoutAsync(800);
@@ -517,17 +622,17 @@ public sealed class IrctcBookingService : IAsyncDisposable
     {
         for (var attempt = 1; attempt <= 3; attempt++)
         {
+            // If LOGIN covers the station box, fill credentials then retry From/To
             await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 400);
 
             var box = page.Locator(comboboxSelector).First;
             await box.ClickAsync();
             await page.WaitForTimeoutAsync(350);
 
-            // Login may steal focus right after opening the combobox — log in, then retry
-            var loginUser = page.Locator(IrctcSelectors.BetaLoginUser).First;
+            var loginUser = page.GetByPlaceholder("Enter Username").First;
             if (await loginUser.CountAsync() > 0 && await loginUser.IsVisibleAsync())
             {
-                progress?.Report($"Beta {label}: LOGIN appeared — signing in then retrying...");
+                progress?.Report($"Beta {label}: LOGIN blocked station — signing in...");
                 await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 1_000);
                 continue;
             }
@@ -555,7 +660,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
             if (await loginUser.CountAsync() > 0 && await loginUser.IsVisibleAsync())
             {
-                progress?.Report($"Beta {label}: LOGIN interrupted typing — signing in then retrying...");
+                progress?.Report($"Beta {label}: LOGIN stole focus — signing in then retrying...");
                 await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 1_000);
                 continue;
             }
@@ -585,7 +690,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         throw new InvalidOperationException(
-            $"Beta could not fill {label} station ({stationCode}) after LOGIN interruptions.");
+            $"Beta could not fill {label} station ({stationCode}).");
     }
 
     private static async Task SelectBetaTravelDateAsync(
@@ -691,7 +796,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 : settings.PreferredClass);
 
         progress?.Report($"Beta: on train list — looking for {trainNum} / {classCode}...");
-        // No login-dismiss / Escape on train-list
 
         if (await IsSessionErrorPageAsync(page))
         {
@@ -714,7 +818,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             }
         }
 
-        await page.WaitForTimeoutAsync(1200);
+        await page.WaitForTimeoutAsync(400);
 
         // Resolve which train to use (exact → visible list fallback messaging)
         var resolvedTrain = await ResolveBetaTrainNumberAsync(page, trainNum, progress);
@@ -730,7 +834,8 @@ public sealed class IrctcBookingService : IAsyncDisposable
             ({ trainNum, classCode }) => {
               const dig = (s) => (s || '').replace(/\D/g, '');
               const want = dig(trainNum);
-              const nodes = Array.from(document.querySelectorAll('button, a, div, span, li'));
+              // button/a only — clicking span+parent was treated as double-click by IRCTC
+              const nodes = Array.from(document.querySelectorAll('button, a'));
               const checks = nodes.filter(el => {
                 const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
                 return /^check\s*avail/i.test(t) && t.length < 36;
@@ -749,8 +854,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 if (m) visibleTrains.push(m[1]);
                 if (dig(cardText).indexOf(want) < 0 && cardText.indexOf(trainNum) < 0) continue;
 
-                // Prefer exact class chip click
-                const chips = Array.from(card.querySelectorAll('button, a, span, div'));
+                const chips = Array.from(card.querySelectorAll('button, a'));
                 for (const c of chips) {
                   const ct = (c.textContent || '').replace(/\s+/g, ' ').trim();
                   if (ct === classCode) {
@@ -805,18 +909,28 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await page.WaitForTimeoutAsync(2200);
+        await page.WaitForTimeoutAsync(800);
 
-        // 2) Wait for BOOK and click for preferred class
-        for (var attempt = 1; attempt <= 10; attempt++)
+        // 2) Wait for BOOK and click once (button/a only — never span/div)
+        for (var attempt = 1; attempt <= 8; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report($"Beta: looking for BOOK ({classCode}) attempt {attempt}/10...");
+
+            if (await IsSessionErrorPageAsync(page)
+                || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
+            {
+                progress?.Report("Beta: session error before BOOK — stopping.");
+                return false;
+            }
+
+            progress?.Report($"Beta: looking for BOOK ({classCode}) attempt {attempt}/8...");
 
             var bookJson = await page.EvaluateAsync<string>("""
                 ({ trainNum, classCode }) => {
-                  const buttons = Array.from(document.querySelectorAll('button, a, div, span'));
-                  const books = buttons.filter(el => {
+                  const dig = (s) => (s || '').replace(/\D/g, '');
+                  const want = dig(trainNum);
+                  // Only real controls — clicking nested span+button was treated as double-click by IRCTC
+                  const books = Array.from(document.querySelectorAll('button, a')).filter(el => {
                     const t = (el.textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
                     return t === 'BOOK' || t === 'BOOK NOW';
                   });
@@ -845,13 +959,14 @@ public sealed class IrctcBookingService : IAsyncDisposable
                     }
                     const up = ctx.toUpperCase();
                     const classOk = hints.some(h => up.indexOf(h) >= 0);
+                    const trainOk = dig(ctx).indexOf(want) >= 0 || ctx.indexOf(trainNum) >= 0;
                     if (!classOk && books.length > 1) continue;
+                    if (!trainOk && books.length > 1) continue;
                     try { b.scrollIntoView({ block: 'center' }); } catch (e) {}
                     try { b.click(); } catch (e) {}
                     return JSON.stringify({ ok: true, step: 'book', classOk: classOk });
                   }
 
-                  // fallback first BOOK
                   try { books[0].scrollIntoView({ block: 'center' }); books[0].click(); } catch (e) {}
                   return JSON.stringify({ ok: true, step: 'book-first', count: books.length });
                 }
@@ -860,37 +975,20 @@ public sealed class IrctcBookingService : IAsyncDisposable
             var bookResult = ParseBetaJson(bookJson);
             if (bookResult.Ok)
             {
-                progress?.Report("Beta: BOOK clicked. Waiting for login...");
-                await page.WaitForTimeoutAsync(1500);
+                progress?.Report("Beta: BOOK clicked once — waiting for LOGIN...");
+                await page.WaitForTimeoutAsync(400);
+                if (await IsSessionErrorPageAsync(page)
+                    || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
+                {
+                    progress?.Report("Beta: session error right after BOOK.");
+                    return false;
+                }
+
                 return true;
             }
 
-            // Availability still loading — optionally re-click Check Availability once
-            if (attempt == 4 || attempt == 7)
-            {
-                await page.EvaluateAsync("""
-                    (trainNum) => {
-                      const dig = (s) => (s || '').replace(/\D/g, '');
-                      const want = dig(trainNum);
-                      const nodes = Array.from(document.querySelectorAll('button, a, div, span'));
-                      for (const el of nodes) {
-                        const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
-                        if (!/^check\s*avail/i.test(t) || t.length >= 36) continue;
-                        let card = el;
-                        for (let i = 0; i < 12 && card; i++) {
-                          if ((card.textContent || '').indexOf(trainNum) >= 0 || dig(card.textContent || '').indexOf(want) >= 0) {
-                            el.click();
-                            return true;
-                          }
-                          card = card.parentElement;
-                        }
-                      }
-                      return false;
-                    }
-                    """, trainNum);
-            }
-
-            await page.WaitForTimeoutAsync(1500);
+            // Do NOT re-click Check Availability (IRCTC treats that as spam / double action)
+            await page.WaitForTimeoutAsync(600);
         }
 
         progress?.Report(
@@ -907,7 +1005,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         if (visible.Count == 0)
         {
             // Page text dump may still have trains before buttons hydrate
-            await page.WaitForTimeoutAsync(1500);
+            await page.WaitForTimeoutAsync(500);
             visible = await ListBetaVisibleTrainNumbersAsync(page);
         }
 
@@ -1011,51 +1109,69 @@ public sealed class IrctcBookingService : IAsyncDisposable
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        // Already past login (e.g. signed in on train-search before search)?
-        try
+        progress?.Report("Beta: after BOOK — looking for LOGIN modal to fill...");
+
+        // Poll: LOGIN fields OR passenger page (do not use flaky .Or().First that can skip fill)
+        var deadline = DateTime.UtcNow.AddMinutes(3);
+        while (DateTime.UtcNow < deadline)
         {
-            var passenger = page.GetByText("Passenger Details", new() { Exact = false }).First;
-            if (await passenger.CountAsync() > 0 && await passenger.IsVisibleAsync())
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsSessionErrorPageAsync(page)
+                || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
             {
-                progress?.Report("Beta: already on passenger page — skipping login.");
+                progress?.Report("Beta: session error while waiting for login.");
                 return;
             }
-        }
-        catch
-        {
-            // continue
-        }
 
-        progress?.Report("Beta: waiting for LOGIN modal (or passenger page if already logged in)...");
-        var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
-        var either = page.Locator(
-            $"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}, " +
-            "text=/Passenger Details/i, text=/New Passenger/i");
+            // Visible LOGIN username? Fill it — this is the post-BOOK modal on train-list
+            var loginVisible = await page.EvaluateAsync<bool>("""
+                () => {
+                  const visible = (el) => {
+                    if (!el) return false;
+                    const r = el.getBoundingClientRect();
+                    const st = window.getComputedStyle(el);
+                    return r.width > 2 && r.height > 2
+                      && st.visibility !== 'hidden' && st.display !== 'none'
+                      && st.opacity !== '0';
+                  };
+                  const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+                  return inputs.some(i => {
+                    const ph = (i.getAttribute('placeholder') || '').toLowerCase();
+                    return ph.includes('enter username') || ph === 'username' || ph.includes('username');
+                  });
+                }
+                """);
 
-        try
-        {
-            await either.First.WaitForAsync(new LocatorWaitForOptions
+            if (loginVisible)
             {
-                State = WaitForSelectorState.Visible,
-                Timeout = 180_000
-            });
-        }
-        catch (TimeoutException)
-        {
-            progress?.Report("Beta login / passenger page not found — trying classic login selectors...");
-            await LoginAsync(page, config, progress, cancellationToken, waitLonger: true);
-            return;
+                progress?.Report("Beta: LOGIN modal visible after BOOK — filling now...");
+                await SubmitBetaLoginCredentialsAsync(
+                    page, config, progress, cancellationToken, waitForPassengerPage: true);
+                progress?.Report("Beta login done.");
+                return;
+            }
+
+            // Already past login?
+            try
+            {
+                var passenger = page.GetByText("Passenger Details", new() { Exact = false }).First;
+                if (await passenger.CountAsync() > 0 && await passenger.IsVisibleAsync())
+                {
+                    progress?.Report("Beta: passenger page already open — login not needed.");
+                    return;
+                }
+            }
+            catch
+            {
+                // keep waiting
+            }
+
+            await page.WaitForTimeoutAsync(400);
         }
 
-        if (await user.CountAsync() > 0 && await user.IsVisibleAsync())
-        {
-            await SubmitBetaLoginCredentialsAsync(
-                page, config, progress, cancellationToken, waitForPassengerPage: true);
-            progress?.Report("Beta login done.");
-            return;
-        }
-
-        progress?.Report("Beta: already logged in — passenger page ready.");
+        progress?.Report("Beta: LOGIN modal did not appear in 3 min — trying classic login...");
+        await LoginAsync(page, config, progress, cancellationToken, waitLonger: true);
     }
 
     private static async Task FillBetaPassengersAsync(
@@ -1631,76 +1747,119 @@ public sealed class IrctcBookingService : IAsyncDisposable
             ? "Beta: selecting Pay through BHIM/UPI..."
             : "Beta: selecting Cards / Net Banking payment option...");
 
-        await SelectBetaPassengerPaymentRadioAsync(page, wantBhim, progress);
-        await page.WaitForTimeoutAsync(1500);
+        var radioOk = false;
+        // Listen BEFORE clicking the radio — fee / Akamai sensor POST must finish before Calculate Fare
+        var settleResponseTask = page.WaitForResponseAsync(
+            IsBetaPaymentOptionSettleResponse,
+            new PageWaitForResponseOptions { Timeout = 12_000 });
 
-        if (await IsSessionErrorPageAsync(page))
+        radioOk = await SelectBetaPassengerPaymentRadioAsync(page, wantBhim, progress);
+        if (!radioOk)
         {
-            await ReportBetaActivityAuditAsync(page, progress, "before Calculate Fare");
-            return;
+            progress?.Report("Beta: retrying payment option selection...");
+            // Restart listener for retry click
+            settleResponseTask = page.WaitForResponseAsync(
+                IsBetaPaymentOptionSettleResponse,
+                new PageWaitForResponseOptions { Timeout = 12_000 });
+            await page.WaitForTimeoutAsync(500);
+            radioOk = await SelectBetaPassengerPaymentRadioAsync(page, wantBhim, progress);
         }
 
-        // Already past Calculate Fare?
-        if (await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).CountAsync() > 0
-            && await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).First.IsVisibleAsync())
+        if (!radioOk)
         {
-            progress?.Report("Beta: Continue To Payment already visible — skipping Calculate Fare.");
+            try { await settleResponseTask; } catch { /* ignore — radio failed */ }
+            progress?.Report(
+                "ACTION REQUIRED: Click 'Pay through BHIM/UPI' (or your payment option) once — bot will wait, then Calculate Fare.");
+            try
+            {
+                // Wait until user selects something / Continue To Payment appears after they calculate
+                await page.GetByRole(AriaRole.Button, new()
+                {
+                    NameRegex = new System.Text.RegularExpressions.Regex(
+                        "Continue To Payment",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                }).First.WaitForAsync(new LocatorWaitForOptions { Timeout = 180_000 });
+                progress?.Report("Beta: Continue To Payment visible after manual payment select.");
+            }
+            catch (TimeoutException)
+            {
+                progress?.Report("Beta: payment option still not selected — stopping before Calculate Fare.");
+                return;
+            }
         }
         else
         {
-            progress?.Report("Beta: Calculate Fare — single click, no retry...");
-            var calcOk = await ClickBetaCriticalButtonOnceAsync(page, "Calculate Fare", progress);
-            if (!calcOk)
+            progress?.Report("Beta: waiting for post-payment network settle (fee / sensor)...");
+            await WaitForBetaPaymentOptionSettledAsync(page, settleResponseTask, progress);
+
+            if (await IsSessionErrorPageAsync(page))
             {
-                progress?.Report("ACTION REQUIRED: Click Calculate Fare once yourself (bot will not retry).");
-                try
-                {
-                    await page.GetByRole(AriaRole.Button, new()
-                    {
-                        NameRegex = new System.Text.RegularExpressions.Regex(
-                            "Continue To Payment",
-                            System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                    }).First.WaitForAsync(new LocatorWaitForOptions { Timeout = 180_000 });
-                }
-                catch (TimeoutException)
-                {
-                    progress?.Report("Calculate Fare / Continue To Payment not reached.");
-                    return;
-                }
+                await ReportBetaActivityAuditAsync(page, progress, "before Calculate Fare");
+                return;
+            }
+
+            // Already past Calculate Fare?
+            if (await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).CountAsync() > 0
+                && await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).First.IsVisibleAsync())
+            {
+                progress?.Report("Beta: Continue To Payment already visible — skipping Calculate Fare.");
             }
             else
             {
-                // Do NOT click Calculate Fare again — only wait for result or session error
-                for (var i = 0; i < 30; i++)
+                progress?.Report("Beta: Calculate Fare — single click, no retry...");
+                var calcOk = await ClickBetaCriticalButtonOnceAsync(page, "Calculate Fare", progress);
+                if (!calcOk)
                 {
-                    if (await IsSessionErrorPageAsync(page))
-                    {
-                        progress?.Report(
-                            "IRCTC killed session right after Calculate Fare "
-                            + "(often treated as double-submit). Close all other IRCTC logins and retry.");
-                        return;
-                    }
-
+                    progress?.Report("ACTION REQUIRED: Click Calculate Fare once yourself (bot will not retry).");
                     try
                     {
-                        var cont = page.GetByRole(AriaRole.Button, new()
+                        await page.GetByRole(AriaRole.Button, new()
                         {
                             NameRegex = new System.Text.RegularExpressions.Regex(
                                 "Continue To Payment",
                                 System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                        }).First;
-                        if (await cont.CountAsync() > 0 && await cont.IsVisibleAsync())
-                        {
-                            progress?.Report("Beta: fare OK — Continue To Payment visible.");
-                            break;
-                        }
+                        }).First.WaitForAsync(new LocatorWaitForOptions { Timeout = 180_000 });
                     }
-                    catch
+                    catch (TimeoutException)
                     {
-                        // keep waiting
+                        progress?.Report("Calculate Fare / Continue To Payment not reached.");
+                        return;
                     }
+                }
+                else
+                {
+                    // Do NOT click Calculate Fare again — only wait for result or session error
+                    for (var i = 0; i < 30; i++)
+                    {
+                        if (await IsSessionErrorPageAsync(page))
+                        {
+                            progress?.Report(
+                                "IRCTC killed session right after Calculate Fare "
+                                + "(often treated as double-submit). Close all other IRCTC logins and retry.");
+                            return;
+                        }
 
-                    await page.WaitForTimeoutAsync(500);
+                        try
+                        {
+                            var cont = page.GetByRole(AriaRole.Button, new()
+                            {
+                                NameRegex = new System.Text.RegularExpressions.Regex(
+                                    "Continue To Payment",
+                                    System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                            }).First;
+                            if (await cont.CountAsync() > 0 && await cont.IsVisibleAsync())
+                            {
+                                progress?.Report("Beta: fare OK — Continue To Payment visible.");
+                                break;
+                            }
+                        }
+                        catch
+                        {
+                            // keep waiting
+                        }
+
+                        await page.WaitForTimeoutAsync(500);
+                    }
                 }
             }
         }
@@ -1711,7 +1870,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await page.WaitForTimeoutAsync(800);
+        await page.WaitForTimeoutAsync(400);
 
         // --- Continue To Payment (once, never retry on exception after click) ---
         progress?.Report("Beta: Continue To Payment — single click, no retry...");
@@ -1759,58 +1918,295 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
     }
 
-    private static async Task SelectBetaPassengerPaymentRadioAsync(
+    /// <summary>
+    /// Matches XHR/fetch after selecting BHIM/UPI (fee update and/or Akamai sensor).
+    /// Must finish before Calculate Fare or IRCTC may kill the session.
+    /// </summary>
+    private static bool IsBetaPaymentOptionSettleResponse(IResponse response)
+    {
+        try
+        {
+            var url = response.Url ?? string.Empty;
+            if (url.Contains(".js", StringComparison.OrdinalIgnoreCase)
+                || url.Contains(".css", StringComparison.OrdinalIgnoreCase)
+                || url.Contains(".png", StringComparison.OrdinalIgnoreCase)
+                || url.Contains(".woff", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("google", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("gstatic", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var status = response.Status;
+            if (status is < 200 or >= 400)
+            {
+                return false;
+            }
+
+            // Akamai Bot Manager / sensor path observed on IRCTC
+            if (url.Contains("FJLVHkB", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var method = response.Request?.Method ?? "";
+            if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase)
+                && !method.Equals("PUT", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!url.Contains("irctc.co.in", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (url.Contains("eticket", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("booking", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("fare", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("payment", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("convenience", StringComparison.OrdinalIgnoreCase)
+                || url.Contains("/api/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            try
+            {
+                var path = new Uri(url).AbsolutePath.Trim('/');
+                if (path.Length is >= 6 and <= 24 && path.All(char.IsLetterOrDigit))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// After payment radio: await settle response (listener started before click), then Calculate Fare enabled.
+    /// </summary>
+    private static async Task WaitForBetaPaymentOptionSettledAsync(
+        IPage page,
+        Task<IResponse> settleResponseTask,
+        IProgress<string>? progress)
+    {
+        try
+        {
+            var resp = await settleResponseTask;
+            progress?.Report(
+                $"Beta: settle response {resp.Status} {TruncateUrl(resp.Url)} — ok to Calculate Fare.");
+        }
+        catch (TimeoutException)
+        {
+            progress?.Report("Beta: no settle response in 12s — short fallback wait...");
+            await page.WaitForTimeoutAsync(1200);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta: settle wait note: {ex.Message} — short fallback...");
+            await page.WaitForTimeoutAsync(1000);
+        }
+
+        await page.WaitForTimeoutAsync(400);
+
+        var calc = page.Locator("button")
+            .Filter(new LocatorFilterOptions { HasText = "Calculate Fare" })
+            .First;
+        try
+        {
+            await calc.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 8_000
+            });
+
+            for (var i = 0; i < 12; i++)
+            {
+                if (await IsSessionErrorPageAsync(page))
+                {
+                    return;
+                }
+
+                try
+                {
+                    if (await calc.IsEnabledAsync())
+                    {
+                        await page.WaitForTimeoutAsync(250);
+                        progress?.Report("Beta: Calculate Fare ready — clicking soon.");
+                        return;
+                    }
+                }
+                catch
+                {
+                    // keep trying
+                }
+
+                await page.WaitForTimeoutAsync(120);
+            }
+
+            progress?.Report("Beta: Calculate Fare still settling — clicking anyway.");
+            await page.WaitForTimeoutAsync(250);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta: wait-for-Calculate-Fare note: {ex.Message}");
+            await page.WaitForTimeoutAsync(600);
+        }
+    }
+
+    /// <summary>
+    /// Passenger page "Payment Options": select Pay through BHIM/UPI (or Cards).
+    /// Must succeed before Calculate Fare — clicking fare with no option selected / wrong option kills session.
+    /// </summary>
+    private static async Task<bool> SelectBetaPassengerPaymentRadioAsync(
         IPage page,
         bool wantBhim,
         IProgress<string>? progress)
     {
         try
         {
-            await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
-            await page.WaitForTimeoutAsync(300);
+            // Wait for Payment Options section (same place as manual booking)
+            try
+            {
+                await page.GetByText("Payment Options", new() { Exact = false }).First
+                    .WaitForAsync(new LocatorWaitForOptions
+                    {
+                        State = WaitForSelectorState.Visible,
+                        Timeout = 30_000
+                    });
+            }
+            catch
+            {
+                progress?.Report("Beta: 'Payment Options' heading not found yet — scrolling...");
+            }
 
-            // Click the radio input only (not a big parent that can nest Calculate Fare)
+            await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
+            await page.WaitForTimeoutAsync(500);
+
+            // Prefer exact visible line: "Pay through BHIM/UPI"
+            if (wantBhim)
+            {
+                try
+                {
+                    // Narrowest row that mentions BHIM/UPI but not the Cards row
+                    var option = page.Locator("label, div, li, span, p")
+                        .Filter(new LocatorFilterOptions { HasText = "Pay through BHIM/UPI" })
+                        .Filter(new LocatorFilterOptions { HasNotText = "Credit & Debit" })
+                        .Filter(new LocatorFilterOptions { HasNotText = "Net Banking" })
+                        .Last;
+
+                    if (await option.CountAsync() > 0)
+                    {
+                        await option.ScrollIntoViewIfNeededAsync();
+                        await page.WaitForTimeoutAsync(300);
+                        // Click radio inside if present, else the option row
+                        var radio = option.Locator("input[type='radio']").First;
+                        if (await radio.CountAsync() > 0)
+                        {
+                            await radio.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5_000 });
+                        }
+                        else
+                        {
+                            await option.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5_000 });
+                        }
+
+                        await page.WaitForTimeoutAsync(400);
+                        progress?.Report("Beta: clicked Pay through BHIM/UPI.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    progress?.Report($"Beta: Playwright BHIM click note: {ex.Message}");
+                }
+            }
+
+            // DOM fallback + Angular-friendly check
             var selected = await page.EvaluateAsync<string>("""
                 (wantBhim) => {
+                  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+                  const isBhim = (t) => /pay\s*through\s*bhim\s*\/\s*upi/i.test(t)
+                    && !/credit\s*&\s*debit/i.test(t);
+                  const isCards = (t) => /pay\s*through\s*credit/i.test(t)
+                    || (/credit\s*&\s*debit/i.test(t) && /net banking/i.test(t));
+
+                  const clickRadio = (input) => {
+                    input.scrollIntoView({ block: 'center' });
+                    input.focus();
+                    input.click();
+                    input.checked = true;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                  };
+
+                  // 1) Real radios
                   const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
                   for (const input of radios) {
                     const label = input.closest('label')
                       || (input.id ? document.querySelector(`label[for="${input.id}"]`) : null)
                       || input.parentElement;
-                    const t = ((label && label.textContent) || '').replace(/\s+/g, ' ').trim();
-                    const hit = wantBhim
-                      ? /bhim\s*\/\s*upi/i.test(t)
-                      : /credit\s*&\s*debit|net banking/i.test(t);
+                    const t = norm((label && label.textContent) || '');
+                    const hit = wantBhim ? isBhim(t) : isCards(t);
                     if (!hit) continue;
-                    input.scrollIntoView({ block: 'center' });
-                    input.click();
-                    return JSON.stringify({ ok: true, t: t.slice(0, 80) });
+                    clickRadio(input);
+                    return JSON.stringify({ ok: true, how: 'radio', t: t.slice(0, 100), checked: !!input.checked });
                   }
-                  // fallback: click small text node for BHIM/UPI only
-                  const nodes = Array.from(document.querySelectorAll('label, span, div'));
+
+                  // 2) Click the BHIM/UPI text node (fee text makes length > 90 — do not cap at 90)
+                  const nodes = Array.from(document.querySelectorAll('label, span, div, p, li'));
+                  let best = null;
+                  let bestLen = 1e9;
                   for (const el of nodes) {
-                    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
-                    if (t.length > 90) continue;
-                    if (wantBhim && /^pay through bhim\/upi/i.test(t)) {
-                      el.click();
-                      return JSON.stringify({ ok: true, t });
-                    }
-                    if (!wantBhim && /^pay through credit/i.test(t)) {
-                      el.click();
-                      return JSON.stringify({ ok: true, t });
+                    const t = norm(el.textContent);
+                    if (t.length < 10 || t.length > 200) continue;
+                    const hit = wantBhim ? isBhim(t) : isCards(t);
+                    if (!hit) continue;
+                    if (t.length < bestLen) {
+                      best = el;
+                      bestLen = t.length;
                     }
                   }
-                  return JSON.stringify({ ok: false });
+                  if (best) {
+                    const input = best.querySelector('input[type="radio"]')
+                      || (best.closest('label') && best.closest('label').querySelector('input[type="radio"]'))
+                      || null;
+                    if (input) {
+                      clickRadio(input);
+                      return JSON.stringify({ ok: true, how: 'label-radio', t: norm(best.textContent).slice(0, 100), checked: !!input.checked });
+                    }
+                    best.scrollIntoView({ block: 'center' });
+                    best.click();
+                    return JSON.stringify({ ok: true, how: 'text', t: norm(best.textContent).slice(0, 100) });
+                  }
+
+                  return JSON.stringify({
+                    ok: false,
+                    radios: radios.length,
+                    sample: nodes.filter(n => /bhim|upi|payment/i.test(n.textContent || '')).slice(0, 5).map(n => norm(n.textContent).slice(0, 80))
+                  });
                 }
                 """, wantBhim);
 
-            progress?.Report(selected?.Contains("\"ok\":true") == true
-                ? "Beta: payment radio selected."
-                : "Beta: payment radio not found — leaving IRCTC default.");
+            var ok = selected?.Contains("\"ok\":true") == true;
+            progress?.Report(ok
+                ? $"Beta: payment option selected ({selected})."
+                : $"Beta: payment option NOT selected ({selected}).");
+            return ok;
         }
         catch (Exception ex)
         {
             progress?.Report($"Beta payment option note: {ex.Message}");
+            return false;
         }
     }
 
@@ -1860,20 +2256,17 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         await btn.ScrollIntoViewIfNeededAsync();
-        await page.WaitForTimeoutAsync(400);
+        await page.WaitForTimeoutAsync(200);
 
         // Mark so we never intentionally click it twice in this method
         var clicked = false;
         try
         {
-            await btn.ClickAsync(new LocatorClickOptions
-            {
-                Timeout = 5_000,
-                ClickCount = 1,
-                Force = false
-            });
+            // Native DOM click only — Playwright ClickAsync can fire pointerdown/mouseup/click
+            // and Angular may treat that as a double-submit (session killer on Calculate Fare).
+            await btn.EvaluateAsync("el => el.click()");
             clicked = true;
-            progress?.Report($"Beta: clicked {buttonName} (once).");
+            progress?.Report($"Beta: clicked {buttonName} (once via JS).");
         }
         catch (Exception ex)
         {
@@ -2907,7 +3300,10 @@ public sealed class IrctcBookingService : IAsyncDisposable
     }
 
     private static string SessionErrorMessage() =>
-        "IRCTC session error (Sorry!!! Please Try again). Usually double-click or Back/Refresh. Close browser and book again — one click only.";
+        "IRCTC session error (Sorry! Please try again). Before retry: "
+        + "1) Log out / close IRCTC in Chrome, app, and other tabs. "
+        + "2) Do not click BOOK/LOGIN yourself while automation runs. "
+        + "3) Press Stop, close the Playwright window, wait 1 min, then Book again.";
 
     private static async Task<bool> IsSessionErrorPageAsync(IPage page)
     {

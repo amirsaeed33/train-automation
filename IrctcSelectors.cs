@@ -77,12 +77,15 @@ public static class IrctcSelectors
     public const string BetaCalendarMonth = ".ui-datepicker-month";
     public const string BetaCalendarYear = ".ui-datepicker-year";
     public const string BetaCalendarDayCells = ".ui-datepicker-calendar td:not(.ui-datepicker-other-month):not(.ui-state-disabled)";
-    public const string BetaLoginDialog = ".login-dialog, .login-dialog-custom, #newLogin, [role='dialog'].login-dialog";
+    public const string BetaLoginDialog = ".login-dialog, .login-dialog-custom, #newLogin, [role='dialog'].login-dialog, .login-wrapper, .cdk-overlay-pane:has(h2:has-text('LOGIN')), div:has(> h2:has-text('LOGIN'))";
     public const string BetaLoginClose = ".login-dialog button.close-btn, .login-wrapper button.close-btn, .login-dialog-custom button.close-btn";
-    public const string BetaLoginUser = ".login-dialog input[placeholder*='Username'], .login-dialog input[placeholder*='Enter Username'], .login-wrapper input[placeholder*='Username'], input[placeholder='Enter Username']";
-    public const string BetaLoginPassword = ".login-dialog input[placeholder*='password'], .login-dialog input[placeholder*='Password'], .login-wrapper input[type='password'], input[placeholder='Enter password']";
-    // Prefer modal LOGIN only — do NOT match header .btn-login
-    public const string BetaLoginButton = ".login-dialog button:has-text('LOGIN'), .login-wrapper button:has-text('LOGIN'), [role='dialog'] button:has-text('LOGIN')";
+    public const string BetaLoginUser =
+        "input[placeholder='Enter Username'], input[placeholder*='Enter Username'], input[placeholder*='Username'], input[formcontrolname='userid'], input[aria-label*='Username']";
+    public const string BetaLoginPassword =
+        "input[placeholder='Enter password'], input[placeholder*='Enter password'], input[placeholder*='Password'], input[type='password'], input[formcontrolname='password']";
+    // Modal LOGIN only — exclude header button.btn-login
+    public const string BetaLoginButton =
+        "button:has-text('LOGIN'):not(.btn-login), .login-dialog button:has-text('LOGIN'), .login-wrapper button:has-text('LOGIN'), [role='dialog'] button:has-text('LOGIN')";
     public const string BetaHeaderLoginButton = "button.btn-login";
     public const string BetaBookButton = "button:has-text('BOOK'), button:has-text('Book')";
     public const string BetaCheckAvailability = "button:has-text('Check Avail'), button:has-text('Check Availability')";
