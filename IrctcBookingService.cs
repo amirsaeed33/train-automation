@@ -185,8 +185,22 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         await WaitForScheduledSearchAsync(config.ScheduledSearchTime, progress, cancellationToken);
-        await DismissBetaLoginIfOpenAsync(page, progress);
-        await FillBetaJourneySearchAsync(page, searchSettings, progress, cancellationToken);
+
+        // If LOGIN modal is already on train-search → login now, then search.
+        // If not → search first; login after BOOK (existing path).
+        await page.WaitForTimeoutAsync(1200);
+        var loggedInEarly = await LoginBetaIfModalPresentAsync(
+            page, config, progress, cancellationToken, waitMs: 4_000);
+        if (loggedInEarly)
+        {
+            progress?.Report("Beta: logged in on search page — continuing to fill search...");
+        }
+        else
+        {
+            progress?.Report("Beta: no LOGIN on search page — will search first, login after BOOK if needed.");
+        }
+
+        await FillBetaJourneySearchAsync(page, searchSettings, config, progress, cancellationToken);
 
         if (await IsSessionErrorPageAsync(page)
             || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
@@ -261,26 +275,29 @@ public sealed class IrctcBookingService : IAsyncDisposable
     private static async Task FillBetaJourneySearchAsync(
         IPage page,
         TrainSearchSettings settings,
+        BookingConfiguration config,
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
         progress?.Report("Beta: filling From / To / Date / Quota...");
-        await DismissBetaLoginIfOpenAsync(page, progress);
+        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 800);
         await page.Locator(IrctcSelectors.BetaFromCombobox)
             .First
             .WaitForAsync(new LocatorWaitForOptions { Timeout = 45_000 });
         await page.WaitForTimeoutAsync(800);
 
         await FillBetaStationComboboxAsync(
-            page, IrctcSelectors.BetaFromCombobox, settings.FromStationCode, "From", progress);
+            page, IrctcSelectors.BetaFromCombobox, settings.FromStationCode, "From",
+            config, progress, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await DismissBetaLoginIfOpenAsync(page, progress);
+        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
         await FillBetaStationComboboxAsync(
-            page, IrctcSelectors.BetaToCombobox, settings.ToStationCode, "To", progress);
+            page, IrctcSelectors.BetaToCombobox, settings.ToStationCode, "To",
+            config, progress, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await DismissBetaLoginIfOpenAsync(page, progress);
+        await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
         await SelectBetaTravelDateAsync(page, settings.TravelDate, progress);
 
         try
@@ -288,7 +305,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             var quotaLabel = IrctcQuotaLabels.ToDisplayLabel(settings.Quota);
             if (!quotaLabel.Equals("GENERAL", StringComparison.OrdinalIgnoreCase))
             {
-                await DismissBetaLoginIfOpenAsync(page, progress);
+                await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
                 var quotaBox = page.Locator(IrctcSelectors.BetaQuotaCombobox).First;
                 await quotaBox.ClickAsync();
                 await page.WaitForTimeoutAsync(400);
@@ -355,45 +372,137 @@ public sealed class IrctcBookingService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Close login modal only when the LOGIN heading is actually visible.
-    /// Never use Escape on train-list (session killer).
+    /// If the LOGIN modal is visible (within waitMs), fill credentials and sign in.
+    /// Returns true when login was performed. Does not close/Escape the modal.
     /// </summary>
-    private static async Task DismissBetaLoginIfOpenAsync(IPage page, IProgress<string>? progress)
+    private static async Task<bool> LoginBetaIfModalPresentAsync(
+        IPage page,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken,
+        int waitMs = 2_000)
     {
         try
         {
-            // After search we must not Escape / poke the page
-            if (page.Url.Contains("train-list", StringComparison.OrdinalIgnoreCase)
-                || page.Url.Contains("booking", StringComparison.OrdinalIgnoreCase)
-                || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
+            var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
+            try
             {
-                return;
+                await user.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = Math.Max(200, waitMs)
+                });
+            }
+            catch
+            {
+                return false;
             }
 
-            var loginHeading = page.GetByRole(AriaRole.Heading, new() { Name = "LOGIN" });
-            var headingVisible = await loginHeading.CountAsync() > 0 && await loginHeading.First.IsVisibleAsync();
-            if (!headingVisible)
-            {
-                return;
-            }
+            progress?.Report("Beta: LOGIN modal open — entering credentials...");
+            await SubmitBetaLoginCredentialsAsync(
+                page, config, progress, cancellationToken, waitForPassengerPage: false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta login-if-present note: {ex.Message}");
+            return false;
+        }
+    }
 
-            progress?.Report("Beta: LOGIN modal open — closing (login after BOOK)...");
-            var close = page.Locator(IrctcSelectors.BetaLoginClose).First;
-            if (await close.CountAsync() > 0 && await close.IsVisibleAsync())
-            {
-                await close.ClickAsync(new LocatorClickOptions { Timeout = 3_000 });
-            }
-            else
-            {
-                // Prefer close button; Escape only on train-search home
-                await page.Keyboard.PressAsync("Escape");
-            }
+    private static async Task SubmitBetaLoginCredentialsAsync(
+        IPage page,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken,
+        bool waitForPassengerPage)
+    {
+        if (string.IsNullOrWhiteSpace(config.Credentials.Username) ||
+            string.IsNullOrWhiteSpace(config.Credentials.Password))
+        {
+            progress?.Report("ERROR: Username/password empty.");
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return;
+        }
 
-            await page.WaitForTimeoutAsync(500);
+        var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
+        await user.ClickAsync();
+        await user.FillAsync("");
+        await user.PressSequentiallyAsync(
+            config.Credentials.Username, new LocatorPressSequentiallyOptions { Delay = 40 });
+
+        var pass = page.Locator($"{IrctcSelectors.BetaLoginPassword}, {IrctcSelectors.LoginPassword}").First;
+        await pass.ClickAsync();
+        await pass.FillAsync("");
+        await pass.PressSequentiallyAsync(
+            config.Credentials.Password, new LocatorPressSequentiallyOptions { Delay = 40 });
+
+        progress?.Report("Beta: clicking LOGIN...");
+        var loginBtn = page.Locator($"{IrctcSelectors.BetaLoginButton}, {IrctcSelectors.LoginSignIn}").First;
+        await loginBtn.ClickAsync();
+
+        progress?.Report("ACTION REQUIRED: Enter OTP/captcha on beta if asked.");
+
+        if (waitForPassengerPage)
+        {
+            await WaitForBetaPassengerPageAsync(page, progress, cancellationToken);
+            return;
+        }
+
+        // Early login on train-search: wait until modal closes (not passenger page yet).
+        try
+        {
+            await user.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = 300_000
+            });
+            progress?.Report("Beta: LOGIN modal closed — signed in.");
         }
         catch
         {
-            // ignore — best effort
+            var heading = page.GetByRole(AriaRole.Heading, new() { Name = "LOGIN" });
+            if (await heading.CountAsync() == 0 || !await heading.First.IsVisibleAsync())
+            {
+                progress?.Report("Beta: LOGIN heading gone — treating as signed in.");
+            }
+            else
+            {
+                progress?.Report("Beta: LOGIN still open after wait — continue; you can finish OTP manually.");
+            }
+        }
+
+        await page.WaitForTimeoutAsync(800);
+    }
+
+    private static async Task WaitForBetaPassengerPageAsync(
+        IPage page,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.GetByText("Passenger Details", new() { Exact = false }).First
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 300_000 });
+            progress?.Report("Beta passenger / review page ready.");
+        }
+        catch
+        {
+            try
+            {
+                await page.GetByText("New Passenger", new() { Exact = false }).First
+                    .WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+                progress?.Report("Beta passenger page ready (New Passenger).");
+            }
+            catch
+            {
+                progress?.Report("Waiting for passenger page after beta login...");
+                await Task.Delay(3000, cancellationToken);
+            }
         }
     }
 
@@ -402,21 +511,24 @@ public sealed class IrctcBookingService : IAsyncDisposable
         string comboboxSelector,
         string stationCode,
         string label,
-        IProgress<string>? progress)
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            await DismissBetaLoginIfOpenAsync(page, progress);
+            await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 400);
 
             var box = page.Locator(comboboxSelector).First;
             await box.ClickAsync();
             await page.WaitForTimeoutAsync(350);
 
-            // Login may steal focus right after opening the combobox
+            // Login may steal focus right after opening the combobox — log in, then retry
             var loginUser = page.Locator(IrctcSelectors.BetaLoginUser).First;
             if (await loginUser.CountAsync() > 0 && await loginUser.IsVisibleAsync())
             {
-                await DismissBetaLoginIfOpenAsync(page, progress);
+                progress?.Report($"Beta {label}: LOGIN appeared — signing in then retrying...");
+                await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 1_000);
                 continue;
             }
 
@@ -432,7 +544,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             catch
             {
                 progress?.Report($"Beta {label}: search box missing (attempt {attempt})...");
-                await DismissBetaLoginIfOpenAsync(page, progress);
+                await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 500);
                 continue;
             }
 
@@ -441,11 +553,10 @@ public sealed class IrctcBookingService : IAsyncDisposable
             await search.PressSequentiallyAsync(stationCode, new LocatorPressSequentiallyOptions { Delay = 70 });
             await page.WaitForTimeoutAsync(900);
 
-            // If login stole keystrokes into Username, dismiss and retry
             if (await loginUser.CountAsync() > 0 && await loginUser.IsVisibleAsync())
             {
-                progress?.Report($"Beta {label}: LOGIN interrupted typing — retrying...");
-                await DismissBetaLoginIfOpenAsync(page, progress);
+                progress?.Report($"Beta {label}: LOGIN interrupted typing — signing in then retrying...");
+                await LoginBetaIfModalPresentAsync(page, config, progress, cancellationToken, waitMs: 1_000);
                 continue;
             }
 
@@ -474,7 +585,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         throw new InvalidOperationException(
-            $"Beta could not fill {label} station ({stationCode}) — LOGIN modal kept interrupting.");
+            $"Beta could not fill {label} station ({stationCode}) after LOGIN interruptions.");
     }
 
     private static async Task SelectBetaTravelDateAsync(
@@ -695,7 +806,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
         cancellationToken.ThrowIfCancellationRequested();
         await page.WaitForTimeoutAsync(2200);
-        await DismissBetaLoginIfOpenAsync(page, progress);
 
         // 2) Wait for BOOK and click for preferred class
         for (var attempt = 1; attempt <= 10; attempt++)
@@ -901,64 +1011,51 @@ public sealed class IrctcBookingService : IAsyncDisposable
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        progress?.Report("Beta: waiting for LOGIN modal...");
+        // Already past login (e.g. signed in on train-search before search)?
+        try
+        {
+            var passenger = page.GetByText("Passenger Details", new() { Exact = false }).First;
+            if (await passenger.CountAsync() > 0 && await passenger.IsVisibleAsync())
+            {
+                progress?.Report("Beta: already on passenger page — skipping login.");
+                return;
+            }
+        }
+        catch
+        {
+            // continue
+        }
+
+        progress?.Report("Beta: waiting for LOGIN modal (or passenger page if already logged in)...");
         var user = page.Locator($"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}").First;
+        var either = page.Locator(
+            $"{IrctcSelectors.BetaLoginUser}, {IrctcSelectors.LoginUserId}, " +
+            "text=/Passenger Details/i, text=/New Passenger/i");
 
         try
         {
-            await user.WaitForAsync(new LocatorWaitForOptions { Timeout = 180_000 });
+            await either.First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 180_000
+            });
         }
         catch (TimeoutException)
         {
-            progress?.Report("Beta login not found — trying classic login selectors...");
+            progress?.Report("Beta login / passenger page not found — trying classic login selectors...");
             await LoginAsync(page, config, progress, cancellationToken, waitLonger: true);
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(config.Credentials.Username) ||
-            string.IsNullOrWhiteSpace(config.Credentials.Password))
+        if (await user.CountAsync() > 0 && await user.IsVisibleAsync())
         {
-            progress?.Report("ERROR: Username/password empty.");
-            await Task.Delay(Timeout.Infinite, cancellationToken);
+            await SubmitBetaLoginCredentialsAsync(
+                page, config, progress, cancellationToken, waitForPassengerPage: true);
+            progress?.Report("Beta login done.");
             return;
         }
 
-        await user.ClickAsync();
-        await user.FillAsync("");
-        await user.PressSequentiallyAsync(config.Credentials.Username, new LocatorPressSequentiallyOptions { Delay = 40 });
-
-        var pass = page.Locator($"{IrctcSelectors.BetaLoginPassword}, {IrctcSelectors.LoginPassword}").First;
-        await pass.ClickAsync();
-        await pass.FillAsync("");
-        await pass.PressSequentiallyAsync(config.Credentials.Password, new LocatorPressSequentiallyOptions { Delay = 40 });
-
-        progress?.Report("Beta: clicking LOGIN...");
-        var loginBtn = page.Locator($"{IrctcSelectors.BetaLoginButton}, {IrctcSelectors.LoginSignIn}").First;
-        await loginBtn.ClickAsync();
-
-        progress?.Report("ACTION REQUIRED: Enter OTP/captcha on beta if asked.");
-        try
-        {
-            await page.GetByText("Passenger Details", new() { Exact = false }).First
-                .WaitForAsync(new LocatorWaitForOptions { Timeout = 300_000 });
-            progress?.Report("Beta passenger / review page ready.");
-        }
-        catch
-        {
-            try
-            {
-                await page.GetByText("New Passenger", new() { Exact = false }).First
-                    .WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
-                progress?.Report("Beta passenger page ready (New Passenger).");
-            }
-            catch
-            {
-                progress?.Report("Waiting for passenger page after beta login...");
-                await Task.Delay(3000, cancellationToken);
-            }
-        }
-
-        progress?.Report("Beta login done.");
+        progress?.Report("Beta: already logged in — passenger page ready.");
     }
 
     private static async Task FillBetaPassengersAsync(
@@ -968,7 +1065,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         progress?.Report("Beta: filling passenger details...");
-        await DismissBetaLoginIfOpenAsync(page, progress);
 
         // Already on passenger page?
         try
