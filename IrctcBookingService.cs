@@ -188,6 +188,21 @@ public sealed class IrctcBookingService : IAsyncDisposable
         await DismissBetaLoginIfOpenAsync(page, progress);
         await FillBetaJourneySearchAsync(page, searchSettings, progress, cancellationToken);
 
+        if (await IsSessionErrorPageAsync(page)
+            || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report(SessionErrorMessage());
+            await HandleSessionErrorAsync(page, progress, cancellationToken);
+            return;
+        }
+
+        if (!page.Url.Contains("train-list", StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report("Beta: not on train list after search — stopping before train clicks.");
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return;
+        }
+
         var booked = await SelectBetaTrainAndBookAsync(
             page, selectedTrain, searchSettings, config, progress, cancellationToken);
 
@@ -209,24 +224,30 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         await LoginBetaAsync(page, config, progress, cancellationToken);
-        await FillPassengersAsync(page, config, progress, cancellationToken);
-        await SelectPassengerPaymentTypeAndContinueAsync(page, config, progress, cancellationToken);
+        await FillBetaPassengersAsync(page, config, progress, cancellationToken);
+        await SelectBetaPaymentAndContinueAsync(page, config, progress, cancellationToken);
         if (await IsSessionErrorPageAsync(page))
         {
+            await ReportBetaActivityAuditAsync(page, progress, "after Calculate Fare / Continue");
             progress?.Report(SessionErrorMessage());
             await HandleSessionErrorAsync(page, progress, cancellationToken);
             return;
         }
 
-        await HandleReviewCaptchaAndContinueAsync(page, progress, cancellationToken);
-        if (await IsSessionErrorPageAsync(page))
+        // Beta review has no classic captcha step — payment page follows Continue To Payment.
+        if (!page.Url.Contains("payment", StringComparison.OrdinalIgnoreCase)
+            && !page.Url.Contains("bkgPayment", StringComparison.OrdinalIgnoreCase))
         {
-            progress?.Report(SessionErrorMessage());
-            await HandleSessionErrorAsync(page, progress, cancellationToken);
-            return;
+            await HandleReviewCaptchaAndContinueAsync(page, progress, cancellationToken);
+            if (await IsSessionErrorPageAsync(page))
+            {
+                progress?.Report(SessionErrorMessage());
+                await HandleSessionErrorAsync(page, progress, cancellationToken);
+                return;
+            }
         }
 
-        await SelectPaymentGatewayAndPayAsync(page, config, progress, cancellationToken);
+        await SelectBetaPaymentGatewayAndPayAsync(page, config, progress, cancellationToken);
         if (await IsSessionErrorPageAsync(page))
         {
             progress?.Report(SessionErrorMessage());
@@ -287,16 +308,24 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await DismissBetaLoginIfOpenAsync(page, progress);
-        progress?.Report("Beta: clicking Search Trains...");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Search Trains" }).ClickAsync();
+
+        // Do NOT dismiss-login / Escape around Search — that can kill the beta session.
+        progress?.Report("Beta: Search Trains (one DOM click)...");
+        var searchBtn = page.GetByRole(AriaRole.Button, new() { Name = "Search Trains" }).First;
+        await searchBtn.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 20_000
+        });
+        // Native element.click() once — avoids Playwright actionability re-clicks during Angular nav
+        await searchBtn.EvaluateAsync("el => el.click()");
 
         try
         {
             await page.WaitForURLAsync(
-                url => url.Contains("train-list", StringComparison.OrdinalIgnoreCase),
+                url => url.Contains("train-list", StringComparison.OrdinalIgnoreCase)
+                       || url.Contains("/error", StringComparison.OrdinalIgnoreCase),
                 new PageWaitForURLOptions { Timeout = 60_000 });
-            progress?.Report("Beta: train list loaded.");
         }
         catch
         {
@@ -304,27 +333,51 @@ public sealed class IrctcBookingService : IAsyncDisposable
             await page.WaitForTimeoutAsync(3000);
         }
 
-        await DismissBetaLoginIfOpenAsync(page, progress);
+        if (await IsSessionErrorPageAsync(page)
+            || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report(
+                "Beta: IRCTC session error right after Search Trains "
+                + "(not train selection yet). Usually multi-login or Search was rejected.");
+            await ReportBetaActivityAuditAsync(page, progress, "after Search Trains");
+            return;
+        }
+
+        if (!page.Url.Contains("train-list", StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report($"Beta: unexpected URL after search: {page.Url}");
+        }
+        else
+        {
+            progress?.Report("Beta: train list loaded — waiting before any clicks...");
+            await page.WaitForTimeoutAsync(2000);
+        }
     }
 
     /// <summary>
-    /// Beta sometimes pops the LOGIN modal during search (or focus lands on it).
-    /// Close it so From/To filling can continue; real login happens after BOOK.
+    /// Close login modal only when the LOGIN heading is actually visible.
+    /// Never use Escape on train-list (session killer).
     /// </summary>
     private static async Task DismissBetaLoginIfOpenAsync(IPage page, IProgress<string>? progress)
     {
         try
         {
-            var dialog = page.Locator(IrctcSelectors.BetaLoginDialog).First;
-            var user = page.Locator(IrctcSelectors.BetaLoginUser).First;
-            var open = (await dialog.CountAsync() > 0 && await dialog.IsVisibleAsync())
-                       || (await user.CountAsync() > 0 && await user.IsVisibleAsync());
-            if (!open)
+            // After search we must not Escape / poke the page
+            if (page.Url.Contains("train-list", StringComparison.OrdinalIgnoreCase)
+                || page.Url.Contains("booking", StringComparison.OrdinalIgnoreCase)
+                || page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
-            progress?.Report("Beta: LOGIN modal appeared early — closing it (login after BOOK)...");
+            var loginHeading = page.GetByRole(AriaRole.Heading, new() { Name = "LOGIN" });
+            var headingVisible = await loginHeading.CountAsync() > 0 && await loginHeading.First.IsVisibleAsync();
+            if (!headingVisible)
+            {
+                return;
+            }
+
+            progress?.Report("Beta: LOGIN modal open — closing (login after BOOK)...");
             var close = page.Locator(IrctcSelectors.BetaLoginClose).First;
             if (await close.CountAsync() > 0 && await close.IsVisibleAsync())
             {
@@ -332,17 +385,11 @@ public sealed class IrctcBookingService : IAsyncDisposable
             }
             else
             {
+                // Prefer close button; Escape only on train-search home
                 await page.Keyboard.PressAsync("Escape");
             }
 
             await page.WaitForTimeoutAsync(500);
-
-            // Confirm closed
-            if (await user.CountAsync() > 0 && await user.IsVisibleAsync())
-            {
-                await page.Keyboard.PressAsync("Escape");
-                await page.WaitForTimeoutAsync(400);
-            }
         }
         catch
         {
@@ -533,7 +580,12 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 : settings.PreferredClass);
 
         progress?.Report($"Beta: on train list — looking for {trainNum} / {classCode}...");
-        await DismissBetaLoginIfOpenAsync(page, progress);
+        // No login-dismiss / Escape on train-list
+
+        if (await IsSessionErrorPageAsync(page))
+        {
+            return false;
+        }
 
         // Wait for at least one Check Availability control (button or clickable text)
         try
@@ -545,9 +597,13 @@ public sealed class IrctcBookingService : IAsyncDisposable
         catch (TimeoutException)
         {
             progress?.Report("Beta: no Check Availability on page yet.");
+            if (await IsSessionErrorPageAsync(page))
+            {
+                return false;
+            }
         }
 
-        await page.WaitForTimeoutAsync(800);
+        await page.WaitForTimeoutAsync(1200);
 
         // Resolve which train to use (exact → visible list fallback messaging)
         var resolvedTrain = await ResolveBetaTrainNumberAsync(page, trainNum, progress);
@@ -883,16 +939,1000 @@ public sealed class IrctcBookingService : IAsyncDisposable
         progress?.Report("ACTION REQUIRED: Enter OTP/captcha on beta if asked.");
         try
         {
-            await page.Locator(IrctcSelectors.PassengerName).First
+            await page.GetByText("Passenger Details", new() { Exact = false }).First
                 .WaitForAsync(new LocatorWaitForOptions { Timeout = 300_000 });
+            progress?.Report("Beta passenger / review page ready.");
         }
         catch
         {
-            progress?.Report("Waiting for passenger page after beta login...");
-            await Task.Delay(3000, cancellationToken);
+            try
+            {
+                await page.GetByText("New Passenger", new() { Exact = false }).First
+                    .WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+                progress?.Report("Beta passenger page ready (New Passenger).");
+            }
+            catch
+            {
+                progress?.Report("Waiting for passenger page after beta login...");
+                await Task.Delay(3000, cancellationToken);
+            }
         }
 
-        progress?.Report("Beta login done (or continue manually if still on login).");
+        progress?.Report("Beta login done.");
+    }
+
+    private static async Task FillBetaPassengersAsync(
+        IPage page,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        progress?.Report("Beta: filling passenger details...");
+        await DismissBetaLoginIfOpenAsync(page, progress);
+
+        // Already on passenger page?
+        try
+        {
+            await page.GetByText("Passenger Details", new() { Exact = false }).First
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        }
+        catch (TimeoutException)
+        {
+            progress?.Report("Beta: passenger page not detected — trying classic filler...");
+            await FillPassengersAsync(page, config, progress, cancellationToken);
+            return;
+        }
+
+        await page.WaitForTimeoutAsync(800);
+        var added = 0;
+
+        foreach (var pax in config.Passengers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(pax.Name))
+            {
+                continue;
+            }
+
+            progress?.Report($"Beta: adding passenger {pax.Name}...");
+
+            // Open New Passenger form / modal
+            var opened = await ClickBetaNewPassengerAsync(page, progress);
+            if (!opened)
+            {
+                progress?.Report("Beta: New Passenger button not found.");
+                break;
+            }
+
+            await page.WaitForTimeoutAsync(700);
+
+            // Name
+            if (!await FillFirstVisibleInputAsync(page, IrctcSelectors.BetaPassengerNameInput, pax.Name))
+            {
+                // Broader fallback
+                await FillFirstVisibleInputAsync(
+                    page,
+                    "input[type='text']:visible, input:not([type]):visible",
+                    pax.Name);
+            }
+
+            // Age
+            if (!string.IsNullOrWhiteSpace(pax.Age))
+            {
+                if (!await FillFirstVisibleInputAsync(page, IrctcSelectors.BetaPassengerAgeInput, pax.Age))
+                {
+                    await page.EvaluateAsync("""
+                        (age) => {
+                          const inputs = Array.from(document.querySelectorAll('input'));
+                          for (const i of inputs) {
+                            const ph = (i.placeholder || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.name || '');
+                            if (/age/i.test(ph) || i.type === 'number') {
+                              i.focus(); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true }));
+                              i.value = String(age);
+                              i.dispatchEvent(new Event('input', { bubbles: true }));
+                              i.dispatchEvent(new Event('change', { bubbles: true }));
+                              return true;
+                            }
+                          }
+                          return false;
+                        }
+                        """, pax.Age);
+                }
+            }
+
+            // Gender (required on beta — dropdown defaults to "Select")
+            var genderOk = await SelectBetaGenderAsync(page, pax.Gender, progress);
+            if (!genderOk)
+            {
+                progress?.Report($"Beta: gender not set for {pax.Name} — retrying...");
+                await page.WaitForTimeoutAsync(400);
+                genderOk = await SelectBetaGenderAsync(page, pax.Gender, progress);
+            }
+
+            // Berth (optional)
+            if (!string.IsNullOrWhiteSpace(pax.BerthPreference)
+                && !pax.BerthPreference.Equals("No Preference", StringComparison.OrdinalIgnoreCase))
+            {
+                await SelectBetaDropdownByTextAsync(page, pax.BerthPreference, "berth", progress);
+            }
+
+            // Save / Add in modal (retry if validation toast / dialog stays open)
+            var saved = false;
+            for (var saveTry = 1; saveTry <= 2; saveTry++)
+            {
+                if (!genderOk)
+                {
+                    genderOk = await SelectBetaGenderAsync(page, pax.Gender, progress);
+                    if (!genderOk)
+                    {
+                        progress?.Report("Beta: Gender still Select — not clicking Add yet.");
+                        break;
+                    }
+                }
+
+                await ClickBetaPassengerSaveAsync(page);
+                await page.WaitForTimeoutAsync(1200);
+
+                if (!await IsBetaAddPassengerDialogOpenAsync(page))
+                {
+                    saved = true;
+                    break;
+                }
+
+                progress?.Report($"Beta: Add Passenger still open (try {saveTry})...");
+                await page.WaitForTimeoutAsync(800);
+                genderOk = await SelectBetaGenderAsync(page, pax.Gender, progress);
+            }
+
+            if (!saved)
+            {
+                progress?.Report($"Beta: could not save passenger {pax.Name} — set Gender and click Add Passenger in browser.");
+                await page.WaitForTimeoutAsync(8000);
+                if (!await IsBetaAddPassengerDialogOpenAsync(page))
+                {
+                    saved = true;
+                }
+            }
+
+            if (saved)
+            {
+                added++;
+                progress?.Report($"Beta: saved passenger {pax.Name}.");
+            }
+
+            await page.WaitForTimeoutAsync(600);
+        }
+
+        // Preferences
+        try
+        {
+            if (config.AutoUpgrade)
+            {
+                await page.GetByText("Auto Upgradation", new() { Exact = false }).First.ClickAsync(
+                    new LocatorClickOptions { Timeout = 3_000, Force = true });
+            }
+        }
+        catch { /* optional */ }
+
+        try
+        {
+            if (config.ConfirmBerthsOnly)
+            {
+                await page.GetByText("confirm berths", new() { Exact = false }).First.ClickAsync(
+                    new LocatorClickOptions { Timeout = 3_000, Force = true });
+            }
+        }
+        catch { /* optional */ }
+
+        // Alternate mobile
+        if (!string.IsNullOrWhiteSpace(config.MobileNumber))
+        {
+            try
+            {
+                var mobile = page.Locator(
+                        "input[placeholder*='mobile'], input[placeholder*='Mobile'], input[placeholder*='Alternate'], input[formcontrolname*='mobile']")
+                    .First;
+                if (await mobile.CountAsync() > 0 && await mobile.IsVisibleAsync())
+                {
+                    await mobile.FillAsync("");
+                    await mobile.PressSequentiallyAsync(config.MobileNumber,
+                        new LocatorPressSequentiallyOptions { Delay = 30 });
+                    progress?.Report("Beta: filled alternate mobile.");
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        progress?.Report(added > 0
+            ? $"Beta: filled {added} passenger(s)."
+            : "Beta: no passengers auto-added — add them in the browser if needed.");
+    }
+
+    private static async Task<bool> ClickBetaNewPassengerAsync(IPage page, IProgress<string>? progress)
+    {
+        try
+        {
+            var btn = page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("New Passenger", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).First;
+            if (await btn.CountAsync() > 0 && await btn.IsVisibleAsync())
+            {
+                await btn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                return true;
+            }
+        }
+        catch { /* try text */ }
+
+        try
+        {
+            var t = page.GetByText("New Passenger", new() { Exact = false }).First;
+            if (await t.CountAsync() > 0)
+            {
+                await t.ClickAsync(new LocatorClickOptions { Timeout = 5_000, Force = true });
+                return true;
+            }
+        }
+        catch { /* try JS */ }
+
+        var clicked = await page.EvaluateAsync<string>("""
+            () => {
+              const nodes = Array.from(document.querySelectorAll('button, a, span, div'));
+              for (const el of nodes) {
+                const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                if (/new\s*passenger/i.test(t) && t.length < 40) {
+                  el.click();
+                  return JSON.stringify({ ok: true });
+                }
+              }
+              return JSON.stringify({ ok: false });
+            }
+            """);
+        var ok = clicked?.Contains("true", StringComparison.OrdinalIgnoreCase) == true;
+        if (!ok)
+        {
+            progress?.Report("Beta: New Passenger control missing.");
+        }
+
+        return ok;
+    }
+
+    private static async Task<bool> FillFirstVisibleInputAsync(IPage page, string selector, string value)
+    {
+        try
+        {
+            var inputs = page.Locator(selector);
+            var n = await inputs.CountAsync();
+            for (var i = 0; i < n; i++)
+            {
+                var input = inputs.Nth(i);
+                if (!await input.IsVisibleAsync())
+                {
+                    continue;
+                }
+
+                await input.ClickAsync();
+                await input.FillAsync("");
+                await input.PressSequentiallyAsync(value, new LocatorPressSequentiallyOptions { Delay = 35 });
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> IsBetaAddPassengerDialogOpenAsync(IPage page)
+    {
+        try
+        {
+            // Modal heading / form still visible
+            var dialog = page.Locator("[role='dialog'], .p-dialog, .ui-dialog, .modal").Filter(
+                new LocatorFilterOptions { HasText = "Add Passenger" });
+            if (await dialog.CountAsync() > 0 && await dialog.First.IsVisibleAsync())
+            {
+                return true;
+            }
+
+            // Gender "Select" still showing in an open form is a strong signal
+            var genderSelect = page.Locator("text=Gender").Locator("xpath=ancestor::*[.//text()[contains(.,'Select')]][1]");
+            if (await page.GetByRole(AriaRole.Dialog).CountAsync() > 0)
+            {
+                return await page.GetByRole(AriaRole.Dialog).First.IsVisibleAsync();
+            }
+
+            _ = genderSelect;
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> SelectBetaGenderAsync(IPage page, string gender, IProgress<string>? progress)
+    {
+        var label = gender.StartsWith("F", StringComparison.OrdinalIgnoreCase) ? "Female"
+            : gender.StartsWith("T", StringComparison.OrdinalIgnoreCase) ? "Transgender"
+            : "Male";
+        var shortCode = label.StartsWith("F", StringComparison.OrdinalIgnoreCase) ? "F"
+            : label.StartsWith("T", StringComparison.OrdinalIgnoreCase) ? "T"
+            : "M";
+
+        progress?.Report($"Beta: selecting gender {label}...");
+
+        // 1) Native <select>
+        try
+        {
+            var selects = page.Locator("select");
+            var sc = await selects.CountAsync();
+            for (var i = 0; i < sc; i++)
+            {
+                var sel = selects.Nth(i);
+                if (!await sel.IsVisibleAsync())
+                {
+                    continue;
+                }
+
+                var meta = ((await sel.GetAttributeAsync("formcontrolname")) ?? "")
+                           + " " + ((await sel.GetAttributeAsync("name")) ?? "")
+                           + " " + ((await sel.GetAttributeAsync("id")) ?? "");
+                if (!meta.Contains("gender", StringComparison.OrdinalIgnoreCase)
+                    && !meta.Contains("sex", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Still try if options include Male/Female
+                    var html = await sel.InnerHTMLAsync();
+                    if (!html.Contains("Male", StringComparison.OrdinalIgnoreCase)
+                        && !html.Contains("Female", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                }
+
+                try
+                {
+                    await sel.SelectOptionAsync(new SelectOptionValue { Label = label });
+                    progress?.Report($"Beta gender: {label} (select)");
+                    return true;
+                }
+                catch
+                {
+                    try
+                    {
+                        await sel.SelectOptionAsync(new SelectOptionValue { Value = shortCode });
+                        progress?.Report($"Beta gender: {label} (select code)");
+                        return true;
+                    }
+                    catch
+                    {
+                        // next
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // continue
+        }
+
+        // 2) Open Gender dropdown (shows "Select") then pick option — scoped to dialog when possible
+        try
+        {
+            var root = page.Locator("[role='dialog'], .p-dialog, .ui-dialog").First;
+            if (await root.CountAsync() == 0 || !await root.IsVisibleAsync())
+            {
+                root = page.Locator("body");
+            }
+
+            // Click the control that currently shows Select under Gender
+            var opened = await page.EvaluateAsync<string>("""
+                () => {
+                  const roots = [
+                    ...document.querySelectorAll('[role="dialog"], .p-dialog, .ui-dialog, .modal'),
+                    document.body
+                  ];
+                  for (const root of roots) {
+                    if (!root) continue;
+                    const labels = Array.from(root.querySelectorAll('label, span, div, p'));
+                    let genderLabel = null;
+                    for (const l of labels) {
+                      const t = (l.textContent || '').replace(/\s+/g, ' ').trim();
+                      if (t === 'Gender' || t === 'Gender*') { genderLabel = l; break; }
+                    }
+                    if (!genderLabel) continue;
+
+                    // Walk up to a row/container, find clickable showing Select
+                    let row = genderLabel.parentElement;
+                    for (let i = 0; i < 5 && row; i++) {
+                      const clickables = Array.from(row.querySelectorAll(
+                        '[role="combobox"], .p-dropdown, .ui-dropdown, select, button, .p-dropdown-trigger, .field-box, [aria-haspopup="listbox"]'));
+                      for (const c of clickables) {
+                        const tx = (c.textContent || '').replace(/\s+/g, ' ').trim();
+                        if (/select/i.test(tx) || c.tagName === 'SELECT' || c.getAttribute('role') === 'combobox') {
+                          c.scrollIntoView({ block: 'center' });
+                          c.click();
+                          return JSON.stringify({ ok: true, how: 'row-control' });
+                        }
+                      }
+                      // also click element next to label that says Select
+                      const sels = Array.from(row.querySelectorAll('div, span, button')).filter(el => {
+                        const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                        return t === 'Select' || t === 'Select Gender';
+                      });
+                      if (sels.length) {
+                        sels[0].click();
+                        return JSON.stringify({ ok: true, how: 'select-text' });
+                      }
+                      row = row.parentElement;
+                    }
+                  }
+                  return JSON.stringify({ ok: false });
+                }
+                """);
+
+            await page.WaitForTimeoutAsync(400);
+
+            // Pick Male / Female from opened panel
+            try
+            {
+                var option = page.GetByRole(AriaRole.Option, new() { Name = label }).First;
+                if (await option.CountAsync() > 0 && await option.IsVisibleAsync())
+                {
+                    await option.ClickAsync(new LocatorClickOptions { Timeout = 3_000 });
+                    progress?.Report($"Beta gender: {label} (option)");
+                    return true;
+                }
+            }
+            catch { /* next */ }
+
+            try
+            {
+                // Prefer exact text match in open dropdown panel
+                var candidates = page.Locator("li.p-dropdown-item, li.ui-dropdown-item, [role='option'], li, span");
+                var n = Math.Min(await candidates.CountAsync(), 40);
+                for (var i = 0; i < n; i++)
+                {
+                    var el = candidates.Nth(i);
+                    if (!await el.IsVisibleAsync())
+                    {
+                        continue;
+                    }
+
+                    var tx = (await el.InnerTextAsync()).Trim();
+                    if (tx.Equals(label, StringComparison.OrdinalIgnoreCase)
+                        || tx.Equals(shortCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await el.ClickAsync(new LocatorClickOptions { Timeout = 3_000, Force = true });
+                        progress?.Report($"Beta gender: {label} (list)");
+                        return true;
+                    }
+                }
+
+                _ = opened;
+            }
+            catch { /* next */ }
+
+            var picked = await page.EvaluateAsync<string>("""
+                (label) => {
+                  const want = (label || '').toLowerCase();
+                  const code = want.startsWith('f') ? 'f' : want.startsWith('t') ? 't' : 'm';
+                  const nodes = Array.from(document.querySelectorAll(
+                    'li, [role="option"], .p-dropdown-item, .ui-dropdown-item, span, div, option'));
+                  for (const el of nodes) {
+                    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!t || t.length > 24) continue;
+                    if (t.toLowerCase() === want || t.toLowerCase() === code
+                        || (code === 'm' && t === 'Male') || (code === 'f' && t === 'Female')) {
+                      el.click();
+                      return JSON.stringify({ ok: true, t });
+                    }
+                  }
+                  return JSON.stringify({ ok: false });
+                }
+                """, label);
+
+            if (picked?.Contains("\"ok\":true") == true)
+            {
+                progress?.Report($"Beta gender: {label} (dom)");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta gender note: {ex.Message}");
+        }
+
+        progress?.Report($"Beta: gender still not selected ({label}).");
+        return false;
+    }
+
+    private static async Task SelectBetaDropdownByTextAsync(
+        IPage page,
+        string value,
+        string hint,
+        IProgress<string>? progress)
+    {
+        try
+        {
+            await page.EvaluateAsync("""
+                ({ value, hint }) => {
+                  const nodes = Array.from(document.querySelectorAll('select, [role="combobox"], button, div, span'));
+                  for (const el of nodes) {
+                    const t = ((el.getAttribute('aria-label') || '') + ' ' + (el.textContent || '')).toLowerCase();
+                    if (t.includes(hint) && t.length < 80) {
+                      el.click();
+                      break;
+                    }
+                  }
+                  const opts = Array.from(document.querySelectorAll('li, option, span, div, button'));
+                  for (const o of opts) {
+                    const tx = (o.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (tx.toLowerCase() === value.toLowerCase() || tx.toLowerCase().includes(value.toLowerCase())) {
+                      o.click();
+                      return true;
+                    }
+                  }
+                  return false;
+                }
+                """, new { value, hint });
+            progress?.Report($"Beta {hint}: {value}");
+        }
+        catch
+        {
+            // optional
+        }
+    }
+
+    private static async Task<bool> ClickBetaPassengerSaveAsync(IPage page)
+    {
+        // Prefer footer primary button inside Add Passenger dialog (not the title text)
+        var json = await page.EvaluateAsync<string>("""
+            () => {
+              const dialogs = Array.from(document.querySelectorAll('[role="dialog"], .p-dialog, .ui-dialog, .modal'));
+              const root = dialogs.find(d => /add\s*passenger/i.test(d.textContent || '')) || dialogs[0] || document.body;
+              const buttons = Array.from(root.querySelectorAll('button'));
+              // Prefer explicit actions at the bottom
+              const prefer = [/add\s*passenger/i, /^add$/i, /^save$/i, /^done$/i, /^submit$/i, /^ok$/i];
+              for (const re of prefer) {
+                for (let i = buttons.length - 1; i >= 0; i--) {
+                  const el = buttons[i];
+                  const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                  if (!re.test(t) || t.length > 40) continue;
+                  // skip disabled
+                  if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+                  el.scrollIntoView({ block: 'center' });
+                  el.click();
+                  return JSON.stringify({ ok: true, t });
+                }
+              }
+              const primary = root.querySelector('button.btn-primary, button[type="submit"]');
+              if (primary && !primary.disabled) {
+                primary.click();
+                return JSON.stringify({ ok: true, t: 'primary' });
+              }
+              return JSON.stringify({ ok: false });
+            }
+            """);
+        return json?.Contains("\"ok\":true") == true;
+    }
+
+    private static async Task SelectBetaPaymentAndContinueAsync(
+        IPage page,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Manual beta flow: pick payment option → Calculate Fare (ONCE) → Continue To Payment (ONCE)
+        // IRCTC session dies on double Calculate Fare — never retry that click.
+        var wantBhim = MapGatewayToPaymentType(config.PaymentMethod)
+            .Contains("BHIM", StringComparison.OrdinalIgnoreCase)
+            || MapGatewayToPaymentType(config.PaymentMethod)
+                .Contains("UPI", StringComparison.OrdinalIgnoreCase);
+
+        progress?.Report(wantBhim
+            ? "Beta: selecting Pay through BHIM/UPI..."
+            : "Beta: selecting Cards / Net Banking payment option...");
+
+        await SelectBetaPassengerPaymentRadioAsync(page, wantBhim, progress);
+        await page.WaitForTimeoutAsync(1500);
+
+        if (await IsSessionErrorPageAsync(page))
+        {
+            await ReportBetaActivityAuditAsync(page, progress, "before Calculate Fare");
+            return;
+        }
+
+        // Already past Calculate Fare?
+        if (await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).CountAsync() > 0
+            && await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).First.IsVisibleAsync())
+        {
+            progress?.Report("Beta: Continue To Payment already visible — skipping Calculate Fare.");
+        }
+        else
+        {
+            progress?.Report("Beta: Calculate Fare — single click, no retry...");
+            var calcOk = await ClickBetaCriticalButtonOnceAsync(page, "Calculate Fare", progress);
+            if (!calcOk)
+            {
+                progress?.Report("ACTION REQUIRED: Click Calculate Fare once yourself (bot will not retry).");
+                try
+                {
+                    await page.GetByRole(AriaRole.Button, new()
+                    {
+                        NameRegex = new System.Text.RegularExpressions.Regex(
+                            "Continue To Payment",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    }).First.WaitForAsync(new LocatorWaitForOptions { Timeout = 180_000 });
+                }
+                catch (TimeoutException)
+                {
+                    progress?.Report("Calculate Fare / Continue To Payment not reached.");
+                    return;
+                }
+            }
+            else
+            {
+                // Do NOT click Calculate Fare again — only wait for result or session error
+                for (var i = 0; i < 30; i++)
+                {
+                    if (await IsSessionErrorPageAsync(page))
+                    {
+                        progress?.Report(
+                            "IRCTC killed session right after Calculate Fare "
+                            + "(often treated as double-submit). Close all other IRCTC logins and retry.");
+                        return;
+                    }
+
+                    try
+                    {
+                        var cont = page.GetByRole(AriaRole.Button, new()
+                        {
+                            NameRegex = new System.Text.RegularExpressions.Regex(
+                                "Continue To Payment",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                        }).First;
+                        if (await cont.CountAsync() > 0 && await cont.IsVisibleAsync())
+                        {
+                            progress?.Report("Beta: fare OK — Continue To Payment visible.");
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        // keep waiting
+                    }
+
+                    await page.WaitForTimeoutAsync(500);
+                }
+            }
+        }
+
+        if (await IsSessionErrorPageAsync(page))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await page.WaitForTimeoutAsync(800);
+
+        // --- Continue To Payment (once, never retry on exception after click) ---
+        progress?.Report("Beta: Continue To Payment — single click, no retry...");
+        var urlBefore = page.Url;
+        var contClicked = await ClickBetaCriticalButtonOnceAsync(page, "Continue To Payment", progress);
+
+        if (!contClicked)
+        {
+            progress?.Report("ACTION REQUIRED: Click Continue To Payment once yourself.");
+            try
+            {
+                await page.WaitForURLAsync(
+                    url => url.Contains("payment", StringComparison.OrdinalIgnoreCase),
+                    new PageWaitForURLOptions { Timeout = 180_000 });
+            }
+            catch (TimeoutException)
+            {
+                progress?.Report("Still on review booking page.");
+            }
+
+            return;
+        }
+
+        try
+        {
+            await page.WaitForURLAsync(
+                url => url.Contains("payment", StringComparison.OrdinalIgnoreCase)
+                       || url.Contains("error", StringComparison.OrdinalIgnoreCase)
+                       || url != urlBefore,
+                new PageWaitForURLOptions { Timeout = 45_000 });
+            if (await IsSessionErrorPageAsync(page))
+            {
+                progress?.Report("Session error after Continue To Payment.");
+                return;
+            }
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForTimeoutAsync(1200);
+            progress?.Report("Beta: payment options page loaded.");
+        }
+        catch
+        {
+            progress?.Report("Beta: waiting for payment page...");
+            await page.WaitForTimeoutAsync(2500);
+        }
+    }
+
+    private static async Task SelectBetaPassengerPaymentRadioAsync(
+        IPage page,
+        bool wantBhim,
+        IProgress<string>? progress)
+    {
+        try
+        {
+            await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
+            await page.WaitForTimeoutAsync(300);
+
+            // Click the radio input only (not a big parent that can nest Calculate Fare)
+            var selected = await page.EvaluateAsync<string>("""
+                (wantBhim) => {
+                  const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                  for (const input of radios) {
+                    const label = input.closest('label')
+                      || (input.id ? document.querySelector(`label[for="${input.id}"]`) : null)
+                      || input.parentElement;
+                    const t = ((label && label.textContent) || '').replace(/\s+/g, ' ').trim();
+                    const hit = wantBhim
+                      ? /bhim\s*\/\s*upi/i.test(t)
+                      : /credit\s*&\s*debit|net banking/i.test(t);
+                    if (!hit) continue;
+                    input.scrollIntoView({ block: 'center' });
+                    input.click();
+                    return JSON.stringify({ ok: true, t: t.slice(0, 80) });
+                  }
+                  // fallback: click small text node for BHIM/UPI only
+                  const nodes = Array.from(document.querySelectorAll('label, span, div'));
+                  for (const el of nodes) {
+                    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (t.length > 90) continue;
+                    if (wantBhim && /^pay through bhim\/upi/i.test(t)) {
+                      el.click();
+                      return JSON.stringify({ ok: true, t });
+                    }
+                    if (!wantBhim && /^pay through credit/i.test(t)) {
+                      el.click();
+                      return JSON.stringify({ ok: true, t });
+                    }
+                  }
+                  return JSON.stringify({ ok: false });
+                }
+                """, wantBhim);
+
+            progress?.Report(selected?.Contains("\"ok\":true") == true
+                ? "Beta: payment radio selected."
+                : "Beta: payment radio not found — leaving IRCTC default.");
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta payment option note: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Exactly one click. If Playwright throws after the click was sent, do NOT fall back to another click
+    /// (that is what IRCTC treats as double-click on Calculate Fare).
+    /// </summary>
+    private static async Task<bool> ClickBetaCriticalButtonOnceAsync(
+        IPage page,
+        string buttonName,
+        IProgress<string>? progress)
+    {
+        var btn = page.Locator("button")
+            .Filter(new LocatorFilterOptions { HasText = buttonName })
+            .First;
+
+        try
+        {
+            await btn.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 20_000
+            });
+        }
+        catch (TimeoutException)
+        {
+            progress?.Report($"Beta: button '{buttonName}' not visible.");
+            return false;
+        }
+
+        // Ensure enabled
+        try
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                if (await btn.IsEnabledAsync())
+                {
+                    break;
+                }
+
+                await page.WaitForTimeoutAsync(200);
+            }
+        }
+        catch
+        {
+            // continue
+        }
+
+        await btn.ScrollIntoViewIfNeededAsync();
+        await page.WaitForTimeoutAsync(400);
+
+        // Mark so we never intentionally click it twice in this method
+        var clicked = false;
+        try
+        {
+            await btn.ClickAsync(new LocatorClickOptions
+            {
+                Timeout = 5_000,
+                ClickCount = 1,
+                Force = false
+            });
+            clicked = true;
+            progress?.Report($"Beta: clicked {buttonName} (once).");
+        }
+        catch (Exception ex)
+        {
+            // If navigation/error started, the click may already have been accepted — DO NOT retry.
+            if (clicked || await IsSessionErrorPageAsync(page)
+                || page.Url.Contains("payment", StringComparison.OrdinalIgnoreCase)
+                || page.Url.Contains("error", StringComparison.OrdinalIgnoreCase))
+            {
+                progress?.Report($"Beta: {buttonName} click may have already fired ({ex.Message}). Not retrying.");
+                return true;
+            }
+
+            progress?.Report($"Beta: {buttonName} click failed before send: {ex.Message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static async Task<bool> ClickBetaButtonOnceAsync(
+        IPage page,
+        IEnumerable<string> names,
+        IProgress<string>? progress)
+    {
+        foreach (var name in names)
+        {
+            if (await ClickBetaCriticalButtonOnceAsync(page, name, progress))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Beta payment page (bkgPaymentOptions): pick IRCTC iPay / provider, then Pay &amp; Book once.
+    /// </summary>
+    private static async Task SelectBetaPaymentGatewayAndPayAsync(
+        IPage page,
+        BookingConfiguration config,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        progress?.Report("Beta: on payment method page...");
+
+        // If classic payment component is present, reuse classic path
+        try
+        {
+            if (await page.Locator(IrctcSelectors.PaymentComponent).CountAsync() > 0)
+            {
+                await SelectPaymentGatewayAndPayAsync(page, config, progress, cancellationToken);
+                return;
+            }
+        }
+        catch
+        {
+            // beta layout
+        }
+
+        try
+        {
+            await page.GetByText("Payment Method", new() { Exact = false })
+                .First
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        }
+        catch
+        {
+            progress?.Report("Beta: payment method heading not found — trying classic payment...");
+            await SelectPaymentGatewayAndPayAsync(page, config, progress, cancellationToken);
+            return;
+        }
+
+        var wantBhim = MapGatewayToPaymentType(config.PaymentMethod)
+            .Contains("BHIM", StringComparison.OrdinalIgnoreCase)
+            || MapGatewayToPaymentType(config.PaymentMethod)
+                .Contains("UPI", StringComparison.OrdinalIgnoreCase);
+
+        // Prefer IRCTC iPay (covers UPI / cards). Avoid E-Wallet ADD & PAY when balance is 0.
+        progress?.Report("Beta: selecting IRCTC iPay...");
+        try
+        {
+            await page.EvaluateAsync("""
+                () => {
+                  const nodes = Array.from(document.querySelectorAll('div, label, button, span, li'));
+                  for (const el of nodes) {
+                    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (/^IRCTC iPay$/i.test(t) || (t.includes('IRCTC iPay') && t.length < 80)) {
+                      (el.closest('div[class], label, button') || el).click();
+                      return true;
+                    }
+                  }
+                  return false;
+                }
+                """);
+            await page.WaitForTimeoutAsync(800);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Beta iPay note: {ex.Message}");
+        }
+
+        // Optional: click a UPI / bank tile if visible (PAYTM etc.)
+        var provider = config.PaymentProvider;
+        if (!string.IsNullOrWhiteSpace(provider))
+        {
+            try
+            {
+                var tile = page.GetByText(provider, new() { Exact = false }).First;
+                if (await tile.CountAsync() > 0 && await tile.IsVisibleAsync())
+                {
+                    await tile.ClickAsync(new LocatorClickOptions { Timeout = 3_000 });
+                    progress?.Report($"Beta: clicked provider {provider}.");
+                    await page.WaitForTimeoutAsync(500);
+                }
+            }
+            catch
+            {
+                // optional
+            }
+        }
+
+        _ = wantBhim;
+
+        progress?.Report("Beta: clicking Pay & Book (once)...");
+        var paid = await ClickBetaButtonOnceAsync(page, new[] { "Pay & Book", "Pay and Book" }, progress);
+        if (!paid)
+        {
+            // Fall back to classic pay selectors
+            try
+            {
+                var pay = page.Locator(IrctcSelectors.PayAndBookButton).First;
+                if (await pay.CountAsync() > 0 && await pay.IsVisibleAsync())
+                {
+                    await pay.ClickAsync(new LocatorClickOptions { Timeout = 8_000, ClickCount = 1 });
+                    paid = true;
+                    progress?.Report("Beta: Pay & Book clicked (classic selector).");
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        if (!paid)
+        {
+            progress?.Report("ACTION REQUIRED: Select payment method and click Pay & Book once.");
+            await page.WaitForTimeoutAsync(120_000);
+        }
+        else
+        {
+            await page.WaitForTimeoutAsync(2000);
+        }
     }
 
     private static async Task DismissLanguagePopupAsync(IPage page, IProgress<string>? progress)
@@ -1793,6 +2833,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
+        await ReportBetaActivityAuditAsync(page, progress, "session-error handler");
         progress?.Report("Not a payment QR. Press Stop, then Book on IRCTC again with a fresh session.");
         try
         {
@@ -1801,6 +2842,132 @@ public sealed class IrctcBookingService : IAsyncDisposable
         catch (OperationCanceledException)
         {
             // stop
+        }
+    }
+
+    /// <summary>
+    /// Passive audit only — never intercept/prevent clicks (that broke IRCTC after Search).
+    /// </summary>
+    private static void AttachBetaActivityAudit(IPage page, IProgress<string>? progress)
+    {
+        page.Request += (_, req) =>
+        {
+            try
+            {
+                var url = req.Url ?? string.Empty;
+                var method = req.Method ?? "";
+                if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase)
+                    && !url.Contains("error", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                if (url.Contains(".js", StringComparison.OrdinalIgnoreCase)
+                    || url.Contains(".css", StringComparison.OrdinalIgnoreCase)
+                    || url.Contains(".png", StringComparison.OrdinalIgnoreCase)
+                    || url.Contains("google", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                var line = $"NET {method} {TruncateUrl(url)}";
+                lock (BetaAuditFileLock)
+                {
+                    BetaNetEvents.Add($"{DateTime.Now:HH:mm:ss.fff} {line}");
+                    if (BetaNetEvents.Count > 80)
+                    {
+                        BetaNetEvents.RemoveAt(0);
+                    }
+                }
+
+                progress?.Report($"[IRCTC_AUDIT] {line}");
+                AppendBetaAuditFile(line);
+            }
+            catch
+            {
+                // ignore audit errors
+            }
+        };
+
+        page.FrameNavigated += (_, frame) =>
+        {
+            if (frame != page.MainFrame)
+            {
+                return;
+            }
+
+            var url = frame.Url ?? "";
+            var line = $"NAV {TruncateUrl(url)}";
+            progress?.Report($"[IRCTC_AUDIT] {line}");
+            AppendBetaAuditFile(line);
+        };
+    }
+
+    private static async Task ReportBetaActivityAuditAsync(
+        IPage page,
+        IProgress<string>? progress,
+        string when)
+    {
+        try
+        {
+            progress?.Report($"[IRCTC_AUDIT] DUMP ({when}) url={page.Url}");
+            AppendBetaAuditFile($"DUMP ({when}) url={page.Url}");
+
+            string net;
+            lock (BetaAuditFileLock)
+            {
+                net = string.Join(" | ", BetaNetEvents.TakeLast(15));
+            }
+
+            if (!string.IsNullOrWhiteSpace(net))
+            {
+                progress?.Report($"[IRCTC_AUDIT] RECENT_NET: {net}");
+                AppendBetaAuditFile($"RECENT_NET: {net}");
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"[IRCTC_AUDIT] dump failed: {ex.Message}");
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private static readonly object BetaAuditFileLock = new();
+    private static readonly List<string> BetaNetEvents = [];
+
+    private static void AppendBetaAuditFile(string line)
+    {
+        try
+        {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "irctc-click-audit.log");
+            lock (BetaAuditFileLock)
+            {
+                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {line}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+            // ignore file errors
+        }
+    }
+
+    private static string TruncateUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            return "";
+        }
+
+        try
+        {
+            var u = new Uri(url);
+            var path = u.PathAndQuery;
+            return path.Length <= 120 ? path : path[..120] + "...";
+        }
+        catch
+        {
+            return url.Length <= 120 ? url : url[..120] + "...";
         }
     }
 

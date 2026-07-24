@@ -87,6 +87,27 @@ public static class IrctcSelectors
     public const string BetaBookButton = "button:has-text('BOOK'), button:has-text('Book')";
     public const string BetaCheckAvailability = "button:has-text('Check Avail'), button:has-text('Check Availability')";
     public const string BetaTrainCard = ".train-card, .train-list-card, app-train-list .card, [class*='train-card'], [class*='trainCard']";
+
+    // Beta passenger / review page
+    public const string BetaPassengerPageMarker =
+        "button:has-text('New Passenger'), text=Passenger Details, text=Booking Review";
+    public const string BetaNewPassengerButton =
+        "button:has-text('New Passenger'), a:has-text('New Passenger'), span:has-text('New Passenger')";
+    public const string BetaExistingPassengerButton =
+        "button:has-text('Existing Passenger'), a:has-text('Existing Passenger'), span:has-text('Existing Passenger')";
+    public const string BetaPassengerNameInput =
+        "input[placeholder*='Name'], input[formcontrolname*='name'], input[formcontrolname*='Name'], input[aria-label*='Name']";
+    public const string BetaPassengerAgeInput =
+        "input[placeholder*='Age'], input[formcontrolname*='age'], input[formcontrolname*='Age'], input[aria-label*='Age'], input[type='number']";
+    public const string BetaPassengerSaveButton =
+        "button:has-text('Add Passenger'), button:has-text('Save'), button:has-text('Done'), button:has-text('Add'), button:has-text('OK')";
+    public const string BetaContinueButton =
+        "button:has-text('Continue To Payment'), button:has-text('Continue Booking'), button:has-text('Proceed to Payment'), button:has-text('Continue')";
+    public const string BetaCalculateFareButton = "button:has-text('Calculate Fare')";
+    public const string BetaContinueToPaymentButton = "button:has-text('Continue To Payment')";
+    public const string BetaBhimUpiOption =
+        "text=Pay through BHIM/UPI, label:has-text('BHIM/UPI'), div:has-text('Pay through BHIM/UPI')";
+    public const string BetaPayAndBookButton = "button:has-text('Pay & Book'), button:has-text('Pay and Book')";
 }
 
 /// <summary>Maps UI quota codes to IRCTC dropdown labels.</summary>
