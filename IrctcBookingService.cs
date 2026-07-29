@@ -5,7 +5,22 @@ namespace train_automation;
 public sealed class IrctcBookingService : IAsyncDisposable
 {
     private IPlaywright? _playwright;
-    private IBrowser? _browser;
+    private IBrowser? _cdpBrowser;
+    private IBrowserContext? _context;
+    private bool _ownsBrowserProcess = true; // false when attached over CDP (leave Chrome open)
+
+    /// <summary>Reused browser profile (cookies/fingerprint) — closer to Hitman-style desktop tools.</summary>
+    private static string IrctcBrowserProfileDir =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "train-automation",
+            "irctc-browser-profile");
+
+    public static string ClickAuditLogPathPublic =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "train-automation",
+            "irctc-click-audit.log");
 
     public async Task BookTrainAsync(
         TrainSearchSettings searchSettings,
@@ -15,23 +30,41 @@ public sealed class IrctcBookingService : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         progress?.Report(config.UseBetaView
-            ? "Starting browser for IRCTC BETA site..."
-            : "Starting visible browser for IRCTC (classic)...");
+            ? "Starting IRCTC BETA..."
+            : "Starting IRCTC classic...");
+        progress?.Report(
+            "IMPORTANT: Log out of IRCTC on phone and other Chrome tabs first (one session only).");
+        progress?.Report($"Click log: {ClickAuditLogPathPublic}");
+
         _playwright ??= await Playwright.CreateAsync();
+        Directory.CreateDirectory(IrctcBrowserProfileDir);
 
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        _context = await OpenIrctcBrowserAsync(config, progress);
+
+        // Only patch webdriver on Playwright-launched browsers (CDP = real Chrome session)
+        if (_ownsBrowserProcess)
         {
-            Headless = false,
-            SlowMo = 40
-        });
+            await _context.AddInitScriptAsync(
+                """
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                """);
+        }
 
-        var context = await _browser.NewContextAsync(new BrowserNewContextOptions
+        var page = _context.Pages.FirstOrDefault(p => !string.IsNullOrEmpty(p.Url) && !p.Url.StartsWith("chrome", StringComparison.OrdinalIgnoreCase))
+            ?? (_context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync());
+
+        Interlocked.Exchange(ref _domClickSerial, 0);
+        // Full DOM click binding can flag automation — keep it for Playwright launch; CDP uses intent logs only
+        if (_ownsBrowserProcess)
         {
-            ViewportSize = new ViewportSize { Width = 1366, Height = 900 },
-            Locale = "en-IN"
-        });
+            await AttachClickAuditAsync(page, progress);
+        }
 
-        var page = await context.NewPageAsync();
+        LogClickAudit(
+            $"SESSION_START beta={config.UseBetaView} realChrome={!_ownsBrowserProcess} handOffCalc={config.HandOffCalculateFare} train={selectedTrain.TrainNumber}");
+        progress?.Report(_ownsBrowserProcess
+            ? "Browser: Playwright-launched Chrome (higher IRCTC risk on Calculate Fare)."
+            : "Browser: attached to REAL Chrome via CDP (best chance).");
 
         try
         {
@@ -62,6 +95,173 @@ public sealed class IrctcBookingService : IAsyncDisposable
             {
                 // expected on Stop
             }
+        }
+    }
+
+    private async Task<IBrowserContext> OpenIrctcBrowserAsync(
+        BookingConfiguration config,
+        IProgress<string>? progress)
+    {
+        if (config.UseRealChrome)
+        {
+            try
+            {
+                var ctx = await ConnectOrStartRealChromeAsync(config, progress);
+                if (ctx is not null)
+                {
+                    return ctx;
+                }
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"Real Chrome CDP failed ({ex.Message}) — falling back to Playwright launch...");
+            }
+        }
+
+        _ownsBrowserProcess = true;
+        return await LaunchPersistentIrctcContextAsync(progress);
+    }
+
+    private async Task<IBrowserContext?> ConnectOrStartRealChromeAsync(
+        BookingConfiguration config,
+        IProgress<string>? progress)
+    {
+        var cdpUrl = string.IsNullOrWhiteSpace(config.ChromeCdpUrl)
+            ? "http://127.0.0.1:9222"
+            : config.ChromeCdpUrl.Trim();
+
+        if (!await IsCdpReachableAsync(cdpUrl))
+        {
+            progress?.Report("Starting Google Chrome with remote debugging (real session)...");
+            if (!TryStartChromeWithDebugging(cdpUrl, progress))
+            {
+                return null;
+            }
+
+            for (var i = 0; i < 40; i++)
+            {
+                if (await IsCdpReachableAsync(cdpUrl))
+                {
+                    break;
+                }
+
+                await Task.Delay(250);
+            }
+
+            if (!await IsCdpReachableAsync(cdpUrl))
+            {
+                progress?.Report("Chrome debugging port did not open.");
+                return null;
+            }
+        }
+
+        progress?.Report($"Connecting over CDP: {cdpUrl}");
+        _cdpBrowser = await _playwright!.Chromium.ConnectOverCDPAsync(cdpUrl);
+        _ownsBrowserProcess = false;
+
+        var ctx = _cdpBrowser.Contexts.Count > 0
+            ? _cdpBrowser.Contexts[0]
+            : await _cdpBrowser.NewContextAsync();
+
+        progress?.Report($"Attached to real Chrome. Profile dir used at start: {IrctcBrowserProfileDir}");
+        return ctx;
+    }
+
+    private static async Task<bool> IsCdpReachableAsync(string cdpUrl)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1.5) };
+            var baseUrl = cdpUrl.TrimEnd('/');
+            var json = await http.GetStringAsync($"{baseUrl}/json/version");
+            return json.Contains("webSocketDebuggerUrl", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryStartChromeWithDebugging(string cdpUrl, IProgress<string>? progress)
+    {
+        try
+        {
+            var uri = new Uri(cdpUrl);
+            var port = uri.Port > 0 ? uri.Port : 9222;
+            var chrome = FindChromeExecutable();
+            if (chrome is null)
+            {
+                progress?.Report("Google Chrome not found on disk.");
+                return false;
+            }
+
+            Directory.CreateDirectory(IrctcBrowserProfileDir);
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = chrome,
+                Arguments =
+                    $"--remote-debugging-port={port} " +
+                    $"--user-data-dir=\"{IrctcBrowserProfileDir}\" " +
+                    "--no-first-run --no-default-browser-check " +
+                    "https://www.irctc.co.in/eticket/train-search",
+                UseShellExecute = false
+            };
+            System.Diagnostics.Process.Start(psi);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Could not start Chrome: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string? FindChromeExecutable()
+    {
+        string[] candidates =
+        [
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Google", "Chrome", "Application", "chrome.exe")
+        ];
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private async Task<IBrowserContext> LaunchPersistentIrctcContextAsync(IProgress<string>? progress)
+    {
+        // ChromiumSandbox MUST be true — Playwright defaults to false and adds --no-sandbox,
+        // which Chrome shows as a yellow banner and bot systems treat as automation.
+        var opts = new BrowserTypeLaunchPersistentContextOptions
+        {
+            Headless = false,
+            SlowMo = 60,
+            ChromiumSandbox = true,
+            ViewportSize = new ViewportSize { Width = 1366, Height = 900 },
+            Locale = "en-IN",
+            IgnoreDefaultArgs =
+            [
+                "--enable-automation",
+                "--no-sandbox"
+            ]
+            // No custom Args — Chrome warns on AutomationControlled and IRCTC treats it as a bot
+        };
+
+        // Prefer installed Google Chrome (realer fingerprint than bundled Chromium)
+        try
+        {
+            opts.Channel = "chrome";
+            progress?.Report($"Browser profile: {IrctcBrowserProfileDir} (Google Chrome, sandbox ON)");
+            return await _playwright!.Chromium.LaunchPersistentContextAsync(IrctcBrowserProfileDir, opts);
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"Chrome channel unavailable ({ex.Message}) — using Chromium profile...");
+            opts.Channel = null;
+            progress?.Report($"Browser profile: {IrctcBrowserProfileDir} (Chromium, sandbox ON)");
+            return await _playwright!.Chromium.LaunchPersistentContextAsync(IrctcBrowserProfileDir, opts);
         }
     }
 
@@ -481,6 +681,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
         await page.WaitForTimeoutAsync(400);
         progress?.Report("Beta: clicking LOGIN once...");
+        LogClickAudit($"BOT_INTENT LOGIN url={TruncateUrl(page.Url)}");
 
         // ONE click only — IRCTC kills the session on double-click / double-submit
         var clicked = await page.EvaluateAsync<bool>("""
@@ -830,6 +1031,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         trainNum = resolvedTrain;
 
         // 1) Click class chip + Check Availability via DOM (Angular-safe)
+        LogClickAudit($"BOT_INTENT Check Availability train={trainNum} class={classCode} url={TruncateUrl(page.Url)}");
         var checkJson = await page.EvaluateAsync<string>("""
             ({ trainNum, classCode }) => {
               const dig = (s) => (s || '').replace(/\D/g, '');
@@ -975,6 +1177,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             var bookResult = ParseBetaJson(bookJson);
             if (bookResult.Ok)
             {
+                LogClickAudit($"BOT_INTENT BOOK fired class={classCode} url={TruncateUrl(page.Url)}");
                 progress?.Report("Beta: BOOK clicked once — waiting for LOGIN...");
                 await page.WaitForTimeoutAsync(400);
                 if (await IsSessionErrorPageAsync(page)
@@ -1748,21 +1951,27 @@ public sealed class IrctcBookingService : IAsyncDisposable
             : "Beta: selecting Cards / Net Banking payment option...");
 
         var radioOk = false;
-        // Listen BEFORE clicking the radio — fee / Akamai sensor POST must finish before Calculate Fare
+        // Short settle listen — do NOT block 12s; proceed when Calculate Fare is enabled
         var settleResponseTask = page.WaitForResponseAsync(
             IsBetaPaymentOptionSettleResponse,
-            new PageWaitForResponseOptions { Timeout = 12_000 });
+            new PageWaitForResponseOptions { Timeout = 2_500 });
 
         radioOk = await SelectBetaPassengerPaymentRadioAsync(page, wantBhim, progress);
         if (!radioOk)
         {
-            progress?.Report("Beta: retrying payment option selection...");
-            // Restart listener for retry click
+            progress?.Report("Beta: retrying payment option selection once...");
             settleResponseTask = page.WaitForResponseAsync(
                 IsBetaPaymentOptionSettleResponse,
-                new PageWaitForResponseOptions { Timeout = 12_000 });
-            await page.WaitForTimeoutAsync(500);
+                new PageWaitForResponseOptions { Timeout = 2_500 });
+            await page.WaitForTimeoutAsync(400);
             radioOk = await SelectBetaPassengerPaymentRadioAsync(page, wantBhim, progress);
+        }
+
+        // Hard gate: never Calculate Fare unless radio is actually checked
+        if (radioOk && !await IsBetaPaymentOptionCheckedAsync(page, wantBhim))
+        {
+            radioOk = false;
+            progress?.Report("Beta: payment looked selected but radio unchecked — blocking Calculate Fare.");
         }
 
         if (!radioOk)
@@ -1798,11 +2007,51 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 return;
             }
 
+            if (!await IsBetaPaymentOptionCheckedAsync(page, wantBhim))
+            {
+                progress?.Report("Beta: UPI/payment lost after settle — NOT clicking Calculate Fare.");
+                return;
+            }
+
             // Already past Calculate Fare?
             if (await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).CountAsync() > 0
                 && await page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("Continue To Payment", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).First.IsVisibleAsync())
             {
                 progress?.Report("Beta: Continue To Payment already visible — skipping Calculate Fare.");
+            }
+            else if (config.HandOffCalculateFare)
+            {
+                LogClickAudit("BOT_HANDOFF Calculate Fare — waiting for user click");
+                progress?.Report(
+                    ">>> ACTION REQUIRED: Click 'Calculate Fare' ONCE yourself in Chrome. "
+                    + "Bot will continue when 'Continue To Payment' appears. Do NOT double-click.");
+                try
+                {
+                    await page.GetByRole(AriaRole.Button, new()
+                    {
+                        NameRegex = new System.Text.RegularExpressions.Regex(
+                            "Continue To Payment",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    }).First.WaitForAsync(new LocatorWaitForOptions
+                    {
+                        State = WaitForSelectorState.Visible,
+                        Timeout = 300_000
+                    });
+                    progress?.Report("Beta: Continue To Payment visible after your Calculate Fare click.");
+                }
+                catch (TimeoutException)
+                {
+                    if (await IsSessionErrorPageAsync(page))
+                    {
+                        progress?.Report("Session error while waiting for your Calculate Fare click.");
+                    }
+                    else
+                    {
+                        progress?.Report("Timed out waiting for Continue To Payment after hand-off.");
+                    }
+
+                    return;
+                }
             }
             else
             {
@@ -1828,14 +2077,16 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 }
                 else
                 {
-                    // Do NOT click Calculate Fare again — only wait for result or session error
-                    for (var i = 0; i < 30; i++)
+                    // Do NOT click Calculate Fare again — only wait for result or session error.
+                    // IRCTC's real fare-calc processing regularly takes ~40s (observed), so give
+                    // it real time here instead of bailing to a manual-click prompt too early.
+                    for (var i = 0; i < 110; i++)
                     {
                         if (await IsSessionErrorPageAsync(page))
                         {
                             progress?.Report(
-                                "IRCTC killed session right after Calculate Fare "
-                                + "(often treated as double-submit). Close all other IRCTC logins and retry.");
+                                "IRCTC killed session right after Calculate Fare. "
+                                + "Turn ON 'You click Calculate Fare' or 'Use real Chrome' and retry.");
                             return;
                         }
 
@@ -1873,9 +2124,12 @@ public sealed class IrctcBookingService : IAsyncDisposable
         await page.WaitForTimeoutAsync(400);
 
         // --- Continue To Payment (once, never retry on exception after click) ---
+        // Visibility was already polled above (settle loop / hand-off wait), so this is
+        // just a short safety-net wait, not the primary wait for IRCTC's fare-calc.
         progress?.Report("Beta: Continue To Payment — single click, no retry...");
         var urlBefore = page.Url;
-        var contClicked = await ClickBetaCriticalButtonOnceAsync(page, "Continue To Payment", progress);
+        var contClicked = await ClickBetaCriticalButtonOnceAsync(
+            page, "Continue To Payment", progress, visibleTimeoutMs: 10_000);
 
         if (!contClicked)
         {
@@ -1993,44 +2247,78 @@ public sealed class IrctcBookingService : IAsyncDisposable
     }
 
     /// <summary>
-    /// After payment radio: await settle response (listener started before click), then Calculate Fare enabled.
+    /// After payment radio: briefly await settle OR until Calculate Fare is enabled (max ~2.5s).
     /// </summary>
     private static async Task WaitForBetaPaymentOptionSettledAsync(
         IPage page,
         Task<IResponse> settleResponseTask,
         IProgress<string>? progress)
     {
-        try
-        {
-            var resp = await settleResponseTask;
-            progress?.Report(
-                $"Beta: settle response {resp.Status} {TruncateUrl(resp.Url)} — ok to Calculate Fare.");
-        }
-        catch (TimeoutException)
-        {
-            progress?.Report("Beta: no settle response in 12s — short fallback wait...");
-            await page.WaitForTimeoutAsync(1200);
-        }
-        catch (Exception ex)
-        {
-            progress?.Report($"Beta: settle wait note: {ex.Message} — short fallback...");
-            await page.WaitForTimeoutAsync(1000);
-        }
-
-        await page.WaitForTimeoutAsync(400);
-
         var calc = page.Locator("button")
             .Filter(new LocatorFilterOptions { HasText = "Calculate Fare" })
             .First;
+
+        // Race network settle vs button enabled — don't sit idle for a full timeout
+        for (var i = 0; i < 13; i++)
+        {
+            if (await IsSessionErrorPageAsync(page))
+            {
+                return;
+            }
+
+            if (settleResponseTask.IsCompletedSuccessfully)
+            {
+                try
+                {
+                    var resp = settleResponseTask.Result;
+                    progress?.Report(
+                        $"Beta: settle {resp.Status} {TruncateUrl(resp.Url)} — ready.");
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                break;
+            }
+
+            try
+            {
+                if (await calc.CountAsync() > 0
+                    && await calc.IsVisibleAsync()
+                    && await calc.IsEnabledAsync())
+                {
+                    progress?.Report("Beta: Calculate Fare enabled — continuing (no long wait).");
+                    await page.WaitForTimeoutAsync(200);
+                    return;
+                }
+            }
+            catch
+            {
+                // keep polling
+            }
+
+            await page.WaitForTimeoutAsync(200);
+        }
+
+        if (!settleResponseTask.IsCompleted)
+        {
+            try { await settleResponseTask; } catch { /* timeout ok */ }
+        }
+        else if (settleResponseTask.IsFaulted || settleResponseTask.IsCanceled)
+        {
+            progress?.Report("Beta: no settle XHR — Calculate Fare check only.");
+        }
+
         try
         {
             await calc.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
-                Timeout = 8_000
+                Timeout = 3_000
             });
 
-            for (var i = 0; i < 12; i++)
+            for (var i = 0; i < 8; i++)
             {
                 if (await IsSessionErrorPageAsync(page))
                 {
@@ -2041,8 +2329,8 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 {
                     if (await calc.IsEnabledAsync())
                     {
-                        await page.WaitForTimeoutAsync(250);
-                        progress?.Report("Beta: Calculate Fare ready — clicking soon.");
+                        progress?.Report("Beta: Calculate Fare ready.");
+                        await page.WaitForTimeoutAsync(150);
                         return;
                     }
                 }
@@ -2051,22 +2339,22 @@ public sealed class IrctcBookingService : IAsyncDisposable
                     // keep trying
                 }
 
-                await page.WaitForTimeoutAsync(120);
+                await page.WaitForTimeoutAsync(150);
             }
 
-            progress?.Report("Beta: Calculate Fare still settling — clicking anyway.");
-            await page.WaitForTimeoutAsync(250);
+            progress?.Report("Beta: Calculate Fare still settling — continuing anyway.");
         }
         catch (Exception ex)
         {
             progress?.Report($"Beta: wait-for-Calculate-Fare note: {ex.Message}");
-            await page.WaitForTimeoutAsync(600);
+            await page.WaitForTimeoutAsync(300);
         }
     }
 
     /// <summary>
     /// Passenger page "Payment Options": select Pay through BHIM/UPI (or Cards).
-    /// Must succeed before Calculate Fare — clicking fare with no option selected / wrong option kills session.
+    /// One real mouse click + verify radio is checked. Synthetic label.click() often
+    /// does not update Angular/PrimeNG — then Calculate Fare runs with nothing selected.
     /// </summary>
     private static async Task<bool> SelectBetaPassengerPaymentRadioAsync(
         IPage page,
@@ -2075,7 +2363,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
     {
         try
         {
-            // Wait for Payment Options section (same place as manual booking)
             try
             {
                 await page.GetByText("Payment Options", new() { Exact = false }).First
@@ -2091,117 +2378,125 @@ public sealed class IrctcBookingService : IAsyncDisposable
             }
 
             await page.EvaluateAsync("window.scrollTo(0, document.body.scrollHeight)");
-            await page.WaitForTimeoutAsync(500);
+            await page.WaitForTimeoutAsync(600);
 
-            // Prefer exact visible line: "Pay through BHIM/UPI"
+            if (await IsBetaPaymentOptionCheckedAsync(page, wantBhim))
+            {
+                progress?.Report("Beta: payment option already selected.");
+                LogClickAudit($"BOT_INTENT payment already wantBhim={wantBhim} url={TruncateUrl(page.Url)}");
+                return true;
+            }
+
+            LogClickAudit($"BOT_INTENT payment radio wantBhim={wantBhim} url={TruncateUrl(page.Url)}");
+
+            // Prefer the visible BHIM/UPI payment-label (same as manual click)
+            ILocator? target = null;
             if (wantBhim)
             {
-                try
+                var label = page.Locator("label.payment-label")
+                    .Filter(new LocatorFilterOptions { HasText = "BHIM/UPI" })
+                    .Filter(new LocatorFilterOptions { HasNotText = "Credit" })
+                    .First;
+                if (await label.CountAsync() > 0 && await label.IsVisibleAsync())
                 {
-                    // Narrowest row that mentions BHIM/UPI but not the Cards row
-                    var option = page.Locator("label, div, li, span, p")
-                        .Filter(new LocatorFilterOptions { HasText = "Pay through BHIM/UPI" })
-                        .Filter(new LocatorFilterOptions { HasNotText = "Credit & Debit" })
-                        .Filter(new LocatorFilterOptions { HasNotText = "Net Banking" })
-                        .Last;
-
-                    if (await option.CountAsync() > 0)
-                    {
-                        await option.ScrollIntoViewIfNeededAsync();
-                        await page.WaitForTimeoutAsync(300);
-                        // Click radio inside if present, else the option row
-                        var radio = option.Locator("input[type='radio']").First;
-                        if (await radio.CountAsync() > 0)
-                        {
-                            await radio.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5_000 });
-                        }
-                        else
-                        {
-                            await option.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 5_000 });
-                        }
-
-                        await page.WaitForTimeoutAsync(400);
-                        progress?.Report("Beta: clicked Pay through BHIM/UPI.");
-                    }
+                    target = label;
                 }
-                catch (Exception ex)
+            }
+            else
+            {
+                var label = page.Locator("label.payment-label")
+                    .Filter(new LocatorFilterOptions { HasText = "Credit" })
+                    .First;
+                if (await label.CountAsync() > 0 && await label.IsVisibleAsync())
                 {
-                    progress?.Report($"Beta: Playwright BHIM click note: {ex.Message}");
+                    target = label;
                 }
             }
 
-            // DOM fallback + Angular-friendly check
-            var selected = await page.EvaluateAsync<string>("""
-                (wantBhim) => {
-                  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
-                  const isBhim = (t) => /pay\s*through\s*bhim\s*\/\s*upi/i.test(t)
-                    && !/credit\s*&\s*debit/i.test(t);
-                  const isCards = (t) => /pay\s*through\s*credit/i.test(t)
-                    || (/credit\s*&\s*debit/i.test(t) && /net banking/i.test(t));
-
-                  const clickRadio = (input) => {
-                    input.scrollIntoView({ block: 'center' });
-                    input.focus();
-                    input.click();
-                    input.checked = true;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                  };
-
-                  // 1) Real radios
-                  const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                  for (const input of radios) {
-                    const label = input.closest('label')
-                      || (input.id ? document.querySelector(`label[for="${input.id}"]`) : null)
-                      || input.parentElement;
-                    const t = norm((label && label.textContent) || '');
-                    const hit = wantBhim ? isBhim(t) : isCards(t);
-                    if (!hit) continue;
-                    clickRadio(input);
-                    return JSON.stringify({ ok: true, how: 'radio', t: t.slice(0, 100), checked: !!input.checked });
-                  }
-
-                  // 2) Click the BHIM/UPI text node (fee text makes length > 90 — do not cap at 90)
-                  const nodes = Array.from(document.querySelectorAll('label, span, div, p, li'));
-                  let best = null;
-                  let bestLen = 1e9;
-                  for (const el of nodes) {
-                    const t = norm(el.textContent);
-                    if (t.length < 10 || t.length > 200) continue;
-                    const hit = wantBhim ? isBhim(t) : isCards(t);
-                    if (!hit) continue;
-                    if (t.length < bestLen) {
-                      best = el;
-                      bestLen = t.length;
-                    }
-                  }
-                  if (best) {
-                    const input = best.querySelector('input[type="radio"]')
-                      || (best.closest('label') && best.closest('label').querySelector('input[type="radio"]'))
-                      || null;
-                    if (input) {
-                      clickRadio(input);
-                      return JSON.stringify({ ok: true, how: 'label-radio', t: norm(best.textContent).slice(0, 100), checked: !!input.checked });
-                    }
-                    best.scrollIntoView({ block: 'center' });
-                    best.click();
-                    return JSON.stringify({ ok: true, how: 'text', t: norm(best.textContent).slice(0, 100) });
-                  }
-
-                  return JSON.stringify({
-                    ok: false,
-                    radios: radios.length,
-                    sample: nodes.filter(n => /bhim|upi|payment/i.test(n.textContent || '')).slice(0, 5).map(n => norm(n.textContent).slice(0, 80))
-                  });
+            // PrimeNG radio box next to the label text (more reliable than label alone)
+            if (target is null)
+            {
+                var needle = wantBhim ? "BHIM/UPI" : "Credit";
+                var row = page.Locator("div, li, label")
+                    .Filter(new LocatorFilterOptions { HasText = needle })
+                    .Filter(new LocatorFilterOptions
+                    {
+                        HasNotText = wantBhim ? "Credit & Debit" : "BHIM"
+                    })
+                    .Last;
+                if (await row.CountAsync() > 0)
+                {
+                    var box = row.Locator(".ui-radiobutton-box, .p-radiobutton-box, input[type='radio']").First;
+                    target = await box.CountAsync() > 0 ? box : row;
                 }
-                """, wantBhim);
+            }
+            else
+            {
+                var boxInLabel = target.Locator(
+                        "xpath=ancestor::*[contains(@class,'payment') or self::li or self::div][1]//*[contains(@class,'ui-radiobutton-box') or contains(@class,'p-radiobutton-box')]")
+                    .First;
+                try
+                {
+                    if (await boxInLabel.CountAsync() > 0 && await boxInLabel.IsVisibleAsync())
+                    {
+                        target = boxInLabel;
+                    }
+                }
+                catch
+                {
+                    // keep label
+                }
+            }
 
-            var ok = selected?.Contains("\"ok\":true") == true;
-            progress?.Report(ok
-                ? $"Beta: payment option selected ({selected})."
-                : $"Beta: payment option NOT selected ({selected}).");
-            return ok;
+            if (target is null || await target.CountAsync() == 0)
+            {
+                progress?.Report("Beta: payment option control not found.");
+                return false;
+            }
+
+            await target.ScrollIntoViewIfNeededAsync();
+            await page.WaitForTimeoutAsync(250);
+
+            var bounds = await target.BoundingBoxAsync();
+            if (bounds is { Width: > 1, Height: > 1 })
+            {
+                // Click near the left (radio circle), not center of long fee text
+                var x = (float)(bounds.X + Math.Min(bounds.Width * 0.15, 28));
+                var y = (float)(bounds.Y + bounds.Height / 2);
+                LogClickAudit($"BOT_INTENT payment mouse @({x:0},{y:0}) url={TruncateUrl(page.Url)}");
+                await page.Mouse.MoveAsync(x, y, new MouseMoveOptions { Steps = 12 });
+                await page.WaitForTimeoutAsync(120);
+                await page.Mouse.DownAsync();
+                await page.WaitForTimeoutAsync(60);
+                await page.Mouse.UpAsync();
+            }
+            else
+            {
+                // Last resort: one native click (still verify after)
+                await target.EvaluateAsync("el => el.click()");
+            }
+
+            await page.WaitForTimeoutAsync(500);
+
+            // Confirm Angular actually checked the radio — never trust click alone
+            for (var i = 0; i < 8; i++)
+            {
+                if (await IsBetaPaymentOptionCheckedAsync(page, wantBhim))
+                {
+                    progress?.Report(wantBhim
+                        ? "Beta: BHIM/UPI payment option verified selected."
+                        : "Beta: Cards payment option verified selected.");
+                    LogClickAudit($"BOT_VERIFY payment checked wantBhim={wantBhim}");
+                    return true;
+                }
+
+                await page.WaitForTimeoutAsync(200);
+            }
+
+            progress?.Report(
+                "Beta: payment click did not stick (radio still unchecked). Will NOT Calculate Fare.");
+            LogClickAudit($"BOT_VERIFY payment FAILED wantBhim={wantBhim}");
+            return false;
         }
         catch (Exception ex)
         {
@@ -2210,14 +2505,64 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
     }
 
+    /// <summary>True when the wanted passenger-page payment radio is actually checked.</summary>
+    private static async Task<bool> IsBetaPaymentOptionCheckedAsync(IPage page, bool wantBhim)
+    {
+        try
+        {
+            return await page.EvaluateAsync<bool>("""
+                (wantBhim) => {
+                  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+                  const isBhim = (t) => /bhim\s*\/\s*upi/i.test(t) && !/credit\s*&\s*debit/i.test(t);
+                  const isCards = (t) => /credit\s*&\s*debit/i.test(t) || /pay\s*through\s*credit/i.test(t);
+                  const match = (t) => wantBhim ? isBhim(t) : isCards(t);
+
+                  const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                  for (const input of radios) {
+                    const root = input.closest('label')
+                      || input.closest('li')
+                      || input.closest('[class*="payment"]')
+                      || input.parentElement?.parentElement
+                      || input.parentElement;
+                    const t = norm(root?.textContent || '');
+                    if (!match(t)) continue;
+                    if (input.checked) return true;
+                    const box = root?.querySelector('.ui-radiobutton-box, .p-radiobutton-box, .ui-state-active');
+                    if (box && (box.classList.contains('ui-state-active')
+                        || box.getAttribute('aria-checked') === 'true'
+                        || box.classList.contains('p-highlight'))) {
+                      return true;
+                    }
+                  }
+
+                  // Checked radio whose nearby text mentions BHIM/UPI
+                  for (const input of radios) {
+                    if (!input.checked) continue;
+                    let n = input;
+                    for (let i = 0; i < 6 && n; i++) {
+                      const t = norm(n.textContent || '');
+                      if (t.length > 8 && match(t)) return true;
+                      n = n.parentElement;
+                    }
+                  }
+                  return false;
+                }
+                """, wantBhim);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>
-    /// Exactly one click. If Playwright throws after the click was sent, do NOT fall back to another click
-    /// (that is what IRCTC treats as double-click on Calculate Fare).
+    /// Exactly one click via real mouse path (Hitman-like). No second click on failure after send.
     /// </summary>
     private static async Task<bool> ClickBetaCriticalButtonOnceAsync(
         IPage page,
         string buttonName,
-        IProgress<string>? progress)
+        IProgress<string>? progress,
+        int visibleTimeoutMs = 20_000)
     {
         var btn = page.Locator("button")
             .Filter(new LocatorFilterOptions { HasText = buttonName })
@@ -2228,7 +2573,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             await btn.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
-                Timeout = 20_000
+                Timeout = visibleTimeoutMs
             });
         }
         catch (TimeoutException)
@@ -2237,7 +2582,6 @@ public sealed class IrctcBookingService : IAsyncDisposable
             return false;
         }
 
-        // Ensure enabled
         try
         {
             for (var i = 0; i < 10; i++)
@@ -2256,21 +2600,35 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         await btn.ScrollIntoViewIfNeededAsync();
-        await page.WaitForTimeoutAsync(200);
+        await page.WaitForTimeoutAsync(250);
 
-        // Mark so we never intentionally click it twice in this method
         var clicked = false;
         try
         {
-            // Native DOM click only — Playwright ClickAsync can fire pointerdown/mouseup/click
-            // and Angular may treat that as a double-submit (session killer on Calculate Fare).
-            await btn.EvaluateAsync("el => el.click()");
-            clicked = true;
-            progress?.Report($"Beta: clicked {buttonName} (once via JS).");
+            var box = await btn.BoundingBoxAsync();
+            if (box is { Width: > 1, Height: > 1 })
+            {
+                var x = box.X + box.Width / 2;
+                var y = box.Y + box.Height / 2;
+                LogClickAudit($"BOT_INTENT mouse '{buttonName}' @({x:0},{y:0}) url={TruncateUrl(page.Url)}");
+                await page.Mouse.MoveAsync(x, y, new MouseMoveOptions { Steps = 18 });
+                await page.WaitForTimeoutAsync(200);
+                await page.Mouse.DownAsync();
+                await page.WaitForTimeoutAsync(70);
+                await page.Mouse.UpAsync();
+                clicked = true;
+                progress?.Report($"Beta: clicked {buttonName} (once via mouse).");
+            }
+            else
+            {
+                LogClickAudit($"BOT_INTENT js '{buttonName}' url={TruncateUrl(page.Url)}");
+                await btn.EvaluateAsync("el => el.click()");
+                clicked = true;
+                progress?.Report($"Beta: clicked {buttonName} (once via JS fallback).");
+            }
         }
         catch (Exception ex)
         {
-            // If navigation/error started, the click may already have been accepted — DO NOT retry.
             if (clicked || await IsSessionErrorPageAsync(page)
                 || page.Url.Contains("payment", StringComparison.OrdinalIgnoreCase)
                 || page.Url.Contains("error", StringComparison.OrdinalIgnoreCase))
@@ -3301,9 +3659,10 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
     private static string SessionErrorMessage() =>
         "IRCTC session error (Sorry! Please try again). Before retry: "
-        + "1) Log out / close IRCTC in Chrome, app, and other tabs. "
-        + "2) Do not click BOOK/LOGIN yourself while automation runs. "
-        + "3) Press Stop, close the Playwright window, wait 1 min, then Book again.";
+        + "1) Log out IRCTC on phone + all Chrome tabs. "
+        + "2) Keep 'Use real Chrome' + 'You click Calculate Fare' ON. "
+        + "3) Stop, wait 1 min, Book again. "
+        + "Log: %LocalAppData%\\train-automation\\irctc-click-audit.log";
 
     private static async Task<bool> IsSessionErrorPageAsync(IPage page)
     {
@@ -3427,9 +3786,146 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
     private static readonly object BetaAuditFileLock = new();
     private static readonly List<string> BetaNetEvents = [];
+    private static int _domClickSerial;
+
+    private static string ClickAuditLogPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "train-automation",
+            "irctc-click-audit.log");
+
+    /// <summary>
+    /// Capture every DOM click (bot or human) + bot intent lines for double-click diagnosis.
+    /// Uses ExposeBinding (not console.log) — IRCTC often swallows console output.
+    /// </summary>
+    private static async Task AttachClickAuditAsync(IPage page, IProgress<string>? progress)
+    {
+        const string clickAuditScript =
+            """
+            (() => {
+              if (window.__irctcClickAudit) return;
+              window.__irctcClickAudit = true;
+              const describe = (el) => {
+                if (!el || !el.tagName) return { tag: '?' };
+                const text = ((el.innerText || el.value || el.getAttribute?.('aria-label') || '') + '')
+                  .replace(/\s+/g, ' ').trim().slice(0, 80);
+                return {
+                  tag: el.tagName,
+                  id: el.id || '',
+                  name: el.getAttribute?.('name') || '',
+                  type: el.getAttribute?.('type') || '',
+                  cls: String(el.className || '').slice(0, 80),
+                  text
+                };
+              };
+              const report = (payload) => {
+                try {
+                  if (typeof window.irctcReportClick === 'function') {
+                    window.irctcReportClick(JSON.stringify(payload));
+                  }
+                } catch (err) {}
+              };
+              document.addEventListener('click', (e) => {
+                try {
+                  const t = e.target;
+                  const d = describe(t);
+                  const path = [];
+                  let n = t;
+                  for (let i = 0; i < 4 && n; i++) {
+                    path.push(n.tagName + (n.id ? '#' + n.id : ''));
+                    n = n.parentElement;
+                  }
+                  report({
+                    ...d,
+                    path: path.join('>'),
+                    x: Math.round(e.clientX),
+                    y: Math.round(e.clientY),
+                    detail: e.detail,
+                    isTrusted: e.isTrusted
+                  });
+                } catch (err) {}
+              }, true);
+            })();
+            """;
+
+        try
+        {
+            await page.ExposeBindingAsync<string>("irctcReportClick", (_, payload) =>
+            {
+                try
+                {
+                    var text = payload ?? "";
+                    var n = Interlocked.Increment(ref _domClickSerial);
+                    var line = $"DOM_CLICK#{n} {text} url={TruncateUrl(page.Url)}";
+                    LogClickAudit(line);
+                    progress?.Report($"Click#{n}: {text}");
+                }
+                catch
+                {
+                    // ignore
+                }
+            });
+        }
+        catch (PlaywrightException)
+        {
+            // binding already registered on this page/context
+        }
+
+        await page.AddInitScriptAsync(clickAuditScript);
+        try
+        {
+            await page.EvaluateAsync(clickAuditScript);
+        }
+        catch
+        {
+            // page may be about:blank / not ready — init script covers next load
+        }
+
+        // Re-attach after full navigations (Angular SPA soft-nav keeps the listener)
+        page.FrameNavigated += async (_, frame) =>
+        {
+            if (frame != page.MainFrame)
+            {
+                return;
+            }
+
+            try
+            {
+                await page.EvaluateAsync(clickAuditScript);
+            }
+            catch
+            {
+                // ignore
+            }
+        };
+    }
+
+    private static void LogClickAudit(string line)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(ClickAuditLogPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            lock (BetaAuditFileLock)
+            {
+                File.AppendAllText(
+                    ClickAuditLogPath,
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {line}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
 
     private static void AppendBetaAuditFile(string line)
     {
+        LogClickAudit(line);
         try
         {
             var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "irctc-click-audit.log");
@@ -4238,10 +4734,34 @@ public sealed class IrctcBookingService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_browser is not null)
+        // CDP attach: do NOT close Chrome — only drop our connection
+        if (_ownsBrowserProcess && _context is not null)
         {
-            await _browser.CloseAsync();
-            _browser = null;
+            try
+            {
+                await _context.CloseAsync();
+            }
+            catch
+            {
+                // ignore close errors
+            }
+        }
+
+        _context = null;
+
+        if (_cdpBrowser is not null)
+        {
+            try
+            {
+                // Disconnect without killing the real Chrome process
+                await _cdpBrowser.CloseAsync();
+            }
+            catch
+            {
+                // ignore
+            }
+
+            _cdpBrowser = null;
         }
 
         _playwright?.Dispose();

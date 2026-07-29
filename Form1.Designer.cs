@@ -58,6 +58,8 @@
             autoUpgradeCheck = new CheckBox();
             confirmBerthsCheck = new CheckBox();
             useBetaViewCheck = new CheckBox();
+            useRealChromeCheck = new CheckBox();
+            handOffCalcFareCheck = new CheckBox();
             ticketNameLabel = new Label();
             ticketNameText = new TextBox();
             saveButton = new Button();
@@ -493,12 +495,34 @@
             // useBetaViewCheck
             // 
             useBetaViewCheck.AutoSize = true;
-            useBetaViewCheck.Location = new Point(530, 586);
+            useBetaViewCheck.Location = new Point(530, 560);
             useBetaViewCheck.Name = "useBetaViewCheck";
             useBetaViewCheck.Size = new Size(230, 24);
             useBetaViewCheck.TabIndex = 48;
             useBetaViewCheck.Text = "Book using IRCTC Beta UI";
             useBetaViewCheck.UseVisualStyleBackColor = true;
+            // 
+            // useRealChromeCheck
+            // 
+            useRealChromeCheck.AutoSize = true;
+            useRealChromeCheck.Checked = true;
+            useRealChromeCheck.Location = new Point(530, 586);
+            useRealChromeCheck.Name = "useRealChromeCheck";
+            useRealChromeCheck.Size = new Size(280, 24);
+            useRealChromeCheck.TabIndex = 49;
+            useRealChromeCheck.Text = "Use real Chrome (CDP) — recommended";
+            useRealChromeCheck.UseVisualStyleBackColor = true;
+            // 
+            // handOffCalcFareCheck
+            // 
+            handOffCalcFareCheck.AutoSize = true;
+            handOffCalcFareCheck.Checked = true;
+            handOffCalcFareCheck.Location = new Point(530, 612);
+            handOffCalcFareCheck.Name = "handOffCalcFareCheck";
+            handOffCalcFareCheck.Size = new Size(250, 24);
+            handOffCalcFareCheck.TabIndex = 50;
+            handOffCalcFareCheck.Text = "I click Calculate Fare myself";
+            handOffCalcFareCheck.UseVisualStyleBackColor = true;
             // 
             // ticketNameLabel
             // 
@@ -554,7 +578,7 @@
             saveButton.BackColor = Color.DimGray;
             saveButton.FlatStyle = FlatStyle.Flat;
             saveButton.ForeColor = Color.White;
-            saveButton.Location = new Point(520, 610);
+            saveButton.Location = new Point(520, 646);
             saveButton.Name = "saveButton";
             saveButton.Size = new Size(80, 36);
             saveButton.TabIndex = 40;
@@ -567,7 +591,7 @@
             bookIrctcButton.BackColor = Color.FromArgb(0, 120, 215);
             bookIrctcButton.FlatStyle = FlatStyle.Flat;
             bookIrctcButton.ForeColor = Color.White;
-            bookIrctcButton.Location = new Point(608, 610);
+            bookIrctcButton.Location = new Point(608, 646);
             bookIrctcButton.Name = "bookIrctcButton";
             bookIrctcButton.Size = new Size(100, 36);
             bookIrctcButton.TabIndex = 46;
@@ -581,7 +605,7 @@
             stopButton.Enabled = false;
             stopButton.FlatStyle = FlatStyle.Flat;
             stopButton.ForeColor = Color.White;
-            stopButton.Location = new Point(716, 610);
+            stopButton.Location = new Point(716, 646);
             stopButton.Name = "stopButton";
             stopButton.Size = new Size(50, 36);
             stopButton.TabIndex = 47;
@@ -593,7 +617,7 @@
             // 
             statusLabel.AutoSize = true;
             statusLabel.ForeColor = Color.DimGray;
-            statusLabel.Location = new Point(10, 622);
+            statusLabel.Location = new Point(10, 654);
             statusLabel.Name = "statusLabel";
             statusLabel.Size = new Size(179, 20);
             statusLabel.TabIndex = 41;
@@ -603,7 +627,7 @@
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(780, 660);
+            ClientSize = new Size(780, 700);
             Controls.Add(statusLabel);
             Controls.Add(stopButton);
             Controls.Add(bookIrctcButton);
@@ -616,6 +640,8 @@
             Controls.Add(ticketNameLabel);
             Controls.Add(confirmBerthsCheck);
             Controls.Add(useBetaViewCheck);
+            Controls.Add(useRealChromeCheck);
+            Controls.Add(handOffCalcFareCheck);
             Controls.Add(autoUpgradeCheck);
             Controls.Add(backupBankCombo);
             Controls.Add(backupBankLabel);
@@ -712,6 +738,8 @@
         private CheckBox autoUpgradeCheck;
         private CheckBox confirmBerthsCheck;
         private CheckBox useBetaViewCheck;
+        private CheckBox useRealChromeCheck;
+        private CheckBox handOffCalcFareCheck;
         private Label ticketNameLabel;
         private TextBox ticketNameText;
         private Button saveButton;

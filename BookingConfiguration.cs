@@ -35,6 +35,21 @@ public sealed class BookingConfiguration
     /// </summary>
     public bool UseBetaView { get; set; }
 
+    /// <summary>
+    /// Attach to a real user-started Chrome via CDP (port 9222) instead of Playwright Launch.
+    /// Highest chance of surviving Calculate Fare — same Chrome you use manually.
+    /// </summary>
+    public bool UseRealChrome { get; set; } = true;
+
+    /// <summary>
+    /// When true (beta), bot fills UPI then waits — YOU click Calculate Fare once.
+    /// Playwright-launched Chrome is often killed on that submit even with a perfect single click.
+    /// </summary>
+    public bool HandOffCalculateFare { get; set; } = true;
+
+    /// <summary>CDP endpoint, e.g. http://127.0.0.1:9222</summary>
+    public string ChromeCdpUrl { get; set; } = "http://127.0.0.1:9222";
+
     /// <summary>Milliseconds between availability refresh attempts.</summary>
     public int RefreshIntervalMs { get; set; } = 1500;
 
@@ -107,6 +122,9 @@ public sealed class BookingConfiguration
                 ConfirmBerthsOnly = ConfirmBerthsOnly,
                 AutoUpgrade = AutoUpgrade,
                 UseBetaView = UseBetaView,
+                UseRealChrome = UseRealChrome,
+                HandOffCalculateFare = HandOffCalculateFare,
+                ChromeCdpUrl = ChromeCdpUrl,
                 RefreshIntervalMs = RefreshIntervalMs,
                 AvailabilityTimeoutSeconds = AvailabilityTimeoutSeconds,
                 ScheduledSearchTime = ScheduledSearchTime
