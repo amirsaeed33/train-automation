@@ -16,11 +16,10 @@ public static class BookingJsonStore
     {
         var bookings = LoadAll();
         bookings.Add(booking);
-        var json = JsonSerializer.Serialize(bookings, JsonOptions);
-        File.WriteAllText(FilePath, json);
+        SaveAll(bookings);
     }
 
-    private static List<TrainBookingRecord> LoadAll()
+    public static List<TrainBookingRecord> LoadAll()
     {
         if (!File.Exists(FilePath))
         {
@@ -34,5 +33,16 @@ public static class BookingJsonStore
         }
 
         return JsonSerializer.Deserialize<List<TrainBookingRecord>>(json, JsonOptions) ?? [];
+    }
+
+    public static void ClearAll()
+    {
+        SaveAll([]);
+    }
+
+    public static void SaveAll(List<TrainBookingRecord> bookings)
+    {
+        var json = JsonSerializer.Serialize(bookings, JsonOptions);
+        File.WriteAllText(FilePath, json);
     }
 }

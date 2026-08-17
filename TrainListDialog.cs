@@ -11,17 +11,21 @@ public sealed class TrainListDialog : Form
     public TrainListDialog()
     {
         Text = "Train List";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(700, 260);
+        ClientSize = new Size(1040, 380);
+        MinimumSize = new Size(760, 280);
         _classLinkFont = new Font(Font, FontStyle.Underline);
 
+        BackColor = UiTheme.PageBg;
+
         _headerLabel.Dock = DockStyle.Top;
-        _headerLabel.Height = 28;
-        _headerLabel.BackColor = Color.FromArgb(180, 160, 220);
-        _headerLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        _headerLabel.Height = 32;
+        _headerLabel.BackColor = UiTheme.SurfaceHigh;
+        _headerLabel.ForeColor = UiTheme.Text;
+        _headerLabel.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
         _headerLabel.Padding = new Padding(8, 6, 8, 6);
         _headerLabel.Text = "Train List — click a class to select for IRCTC booking";
 
@@ -32,7 +36,27 @@ public sealed class TrainListDialog : Form
         _grid.RowHeadersVisible = false;
         _grid.SelectionMode = DataGridViewSelectionMode.CellSelect;
         _grid.AutoGenerateColumns = false;
-        _grid.BackgroundColor = SystemColors.Window;
+        _grid.BackgroundColor = UiTheme.PageBg;
+        _grid.BorderStyle = BorderStyle.None;
+        _grid.GridColor = UiTheme.OutlineVariant;
+        _grid.EnableHeadersVisualStyles = false;
+
+        _grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+        {
+            BackColor = UiTheme.Surface,
+            ForeColor = UiTheme.TextMuted,
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            SelectionBackColor = UiTheme.Surface
+        };
+        _grid.DefaultCellStyle = new DataGridViewCellStyle
+        {
+            BackColor = UiTheme.Surface,
+            ForeColor = UiTheme.Text,
+            Font = new Font("Segoe UI", 9F),
+            SelectionBackColor = UiTheme.SurfaceHigh,
+            SelectionForeColor = UiTheme.Text
+        };
+
         _grid.CellMouseClick += Grid_CellMouseClick;
         _grid.CellFormatting += Grid_CellFormatting;
         _grid.CellMouseMove += Grid_CellMouseMove;
@@ -53,20 +77,20 @@ public sealed class TrainListDialog : Form
     {
         _grid.Columns.Clear();
         AddCol(nameof(TrainResult.TrainNumber), "No", 60);
-        AddCol(nameof(TrainResult.TrainName), "Train", 110);
-        AddCol(nameof(TrainResult.FromStation), "From", 45);
-        AddCol(nameof(TrainResult.Departure), "Depart", 55);
-        AddCol(nameof(TrainResult.ToStation), "To", 45);
-        AddCol(nameof(TrainResult.Arrival), "Arrival", 55);
-        AddCol(nameof(TrainResult.TravelTime), "Travel", 55);
-        AddCol(nameof(TrainResult.AvailableClasses), "Classes", 150);
-        AddCol(nameof(TrainResult.Monday), "M", 28);
-        AddCol(nameof(TrainResult.Tuesday), "T", 28);
-        AddCol(nameof(TrainResult.Wednesday), "W", 28);
-        AddCol(nameof(TrainResult.Thursday), "T", 28);
-        AddCol(nameof(TrainResult.Friday), "F", 28);
-        AddCol(nameof(TrainResult.Saturday), "S", 28);
-        AddCol(nameof(TrainResult.Sunday), "S", 28);
+        AddCol(nameof(TrainResult.TrainName), "Train", 190);
+        AddCol(nameof(TrainResult.FromStation), "From", 60);
+        AddCol(nameof(TrainResult.Departure), "Depart", 70);
+        AddCol(nameof(TrainResult.ToStation), "To", 60);
+        AddCol(nameof(TrainResult.Arrival), "Arrival", 70);
+        AddCol(nameof(TrainResult.TravelTime), "Travel", 65);
+        AddCol(nameof(TrainResult.AvailableClasses), "Classes", 190);
+        AddCol(nameof(TrainResult.Monday), "M", 32);
+        AddCol(nameof(TrainResult.Tuesday), "T", 32);
+        AddCol(nameof(TrainResult.Wednesday), "W", 32);
+        AddCol(nameof(TrainResult.Thursday), "T", 32);
+        AddCol(nameof(TrainResult.Friday), "F", 32);
+        AddCol(nameof(TrainResult.Saturday), "S", 32);
+        AddCol(nameof(TrainResult.Sunday), "S", 32);
     }
 
     private void AddCol(string property, string header, int width)
@@ -76,7 +100,8 @@ public sealed class TrainListDialog : Form
             DataPropertyName = property,
             HeaderText = header,
             Width = width,
-            SortMode = DataGridViewColumnSortMode.NotSortable
+            SortMode = DataGridViewColumnSortMode.NotSortable,
+            Resizable = DataGridViewTriState.True
         });
     }
 
@@ -94,9 +119,9 @@ public sealed class TrainListDialog : Form
                 var column = _grid.Columns[cell.ColumnIndex];
                 if (column.DataPropertyName.Equals(nameof(TrainResult.AvailableClasses), StringComparison.Ordinal))
                 {
-                    cell.Style.ForeColor = Color.RoyalBlue;
+                    cell.Style.ForeColor = Color.LightSkyBlue;
                     cell.Style.Font = _classLinkFont;
-                    cell.Style.SelectionForeColor = Color.RoyalBlue;
+                    cell.Style.SelectionForeColor = Color.LightSkyBlue;
                     continue;
                 }
 
@@ -105,7 +130,7 @@ public sealed class TrainListDialog : Form
                     or nameof(TrainResult.Saturday) or nameof(TrainResult.Sunday))
                 {
                     var runs = cell.Value?.ToString() is "Y";
-                    cell.Style.ForeColor = runs ? Color.DarkGreen : Color.LightGray;
+                    cell.Style.ForeColor = runs ? Color.MediumSeaGreen : UiTheme.TextMuted;
                     cell.Style.Font = runs ? new Font(_grid.Font, FontStyle.Bold) : _grid.Font;
                 }
             }
@@ -125,9 +150,9 @@ public sealed class TrainListDialog : Form
             return;
         }
 
-        e.CellStyle.ForeColor = Color.RoyalBlue;
+        e.CellStyle.ForeColor = Color.LightSkyBlue;
         e.CellStyle.Font = _classLinkFont;
-        e.CellStyle.SelectionForeColor = Color.RoyalBlue;
+        e.CellStyle.SelectionForeColor = Color.LightSkyBlue;
     }
 
     private void Grid_CellMouseMove(object? sender, DataGridViewCellMouseEventArgs e)

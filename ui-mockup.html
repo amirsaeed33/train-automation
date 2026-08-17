@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>New Ticket — IRCTC Automation (UI Mockup)</title>
+<style>
+  :root {
+    --primary: #6C4FE0;
+    --primary-dark: #5638C2;
+    --primary-light: #EFEAFC;
+    --bg: #F4F4FA;
+    --card: #FFFFFF;
+    --border: #E6E5F0;
+    --text: #201C33;
+    --text-muted: #78748C;
+    --success: #1E9E6B;
+    --success-light: #E4F6EE;
+    --danger: #D64545;
+    --danger-light: #FBEAEA;
+    --warn: #B5860B;
+    --warn-light: #FBF2DC;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+    font-size: 14px;
+  }
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 1180px;
+    margin: 0 auto;
+    background: var(--bg);
+  }
+
+  /* ---------- Header ---------- */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: var(--primary);
+    color: white;
+    flex: 0 0 auto;
+  }
+  .titlebar-left { display: flex; align-items: center; gap: 10px; }
+  .titlebar-left .mark {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: rgba(255,255,255,0.18);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .titlebar-left h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  .titlebar-left .sub { font-size: 11px; opacity: 0.75; margin-top: 1px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.15);
+    padding: 5px 12px; border-radius: 999px; font-size: 12px;
+  }
+  .status-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #6EE7A8; }
+
+  /* ---------- Content ---------- */
+  .content {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 20px 24px 12px;
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 18px;
+    align-content: start;
+  }
+  .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-header .icon {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: var(--primary-light); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  .card-header h2 { font-size: 13.5px; font-weight: 600; margin: 0; letter-spacing: .1px; }
+  .card-header .hint { font-size: 11.5px; color: var(--text-muted); margin-left: auto; }
+  .card-body { padding: 16px 18px; }
+
+  label { display: block; font-size: 11.5px; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
+  input[type=text], input[type=password], input[type=date], select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13.5px;
+    background: #FCFCFE;
+    color: var(--text);
+    transition: border-color .12s, box-shadow .12s;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+    background: white;
+  }
+  input[readonly] { background: #F1F0F6; color: var(--text-muted); }
+
+  .row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .row:last-child { margin-bottom: 0; }
+  .field { flex: 1; min-width: 0; }
+  .field.grow2 { flex: 2; }
+
+  .btn {
+    border: none; border-radius: 8px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    transition: transform .05s, filter .12s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { filter: brightness(1.07); }
+  .btn-outline { background: white; color: var(--primary); border: 1px solid var(--primary); }
+  .btn-outline:hover { background: var(--primary-light); }
+  .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: #F1F0F6; }
+  .btn-danger-outline { background: white; color: var(--danger); border: 1px solid #F1C6C6; }
+  .btn-danger-outline:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-block { width: 100%; }
+
+  /* Quota segmented control */
+  .segmented { display: flex; gap: 6px; flex-wrap: wrap; }
+  .segmented .seg {
+    padding: 7px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+    border: 1px solid var(--border); background: #FCFCFE; color: var(--text-muted); cursor: pointer;
+  }
+  .segmented .seg.active { background: var(--primary); border-color: var(--primary); color: white; }
+
+  a.link { color: var(--primary); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
+
+  /* Tables */
+  table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.data th {
+    text-align: left; color: var(--text-muted); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .3px; padding: 6px 10px; background: #FAFAFD;
+    border-bottom: 1px solid var(--border);
+  }
+  table.data td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  table.data tr:last-child td { border-bottom: none; }
+  table.data tr.selected td { background: var(--primary-light); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .badge.success { background: var(--success-light); color: var(--success); }
+  .badge.warn { background: var(--warn-light); color: var(--warn); }
+  .total-fare { font-weight: 700; color: var(--primary); }
+
+  .subhead { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; margin: 2px 0 10px; }
+
+  /* Fare hero number */
+  .fare-hero { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+  .fare-hero .amount { font-size: 26px; font-weight: 700; color: var(--text); }
+  .fare-hero .curr { font-size: 14px; color: var(--text-muted); }
+
+  /* Toggle switches for preferences */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-row .label-group .t { font-size: 13px; font-weight: 600; color: var(--text); }
+  .toggle-row .label-group .d { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+  .switch { position: relative; width: 38px; height: 22px; flex: 0 0 auto; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0; background: #DCDAE8; border-radius: 999px; cursor: pointer; transition: background .15s;
+  }
+  .switch .track::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    background: white; border-radius: 50%; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  }
+  .switch input:checked + .track { background: var(--primary); }
+  .switch input:checked + .track::before { transform: translateX(16px); }
+
+  /* Passenger grid */
+  .pax-grid { display: flex; flex-direction: column; gap: 8px; }
+  .pax-row { display: grid; grid-template-columns: 22px 1.4fr .6fr .6fr 1fr 24px 24px 24px; gap: 8px; align-items: center; }
+  .pax-row.head { font-size: 10.5px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: .3px; }
+  .pax-row input, .pax-row select { padding: 6px 8px; font-size: 12.5px; }
+  .pax-num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  .chk { width: 15px; height: 15px; accent-color: var(--primary); }
+
+  /* ---------- Bottom action bar ---------- */
+  .actionbar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 24px;
+    background: white;
+    border-top: 1px solid var(--border);
+  }
+  .actionbar .status { font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+  .actionbar .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .actionbar .spacer { flex: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <div class="mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 15.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/><path d="M4 15.5h16v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2Z" stroke="white" stroke-width="1.8"/><path d="M8 22l1.2-2.5M16 22l-1.2-2.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1.4" fill="white"/><circle cx="16" cy="12" r="1.4" fill="white"/></svg>
+      </div>
+      <div>
+        <h1>New Ticket</h1>
+        <div class="sub">IRCTC Booking Automation</div>
+      </div>
+    </div>
+    <div class="status-pill"><span class="dot"></span> Ready</div>
+  </div>
+
+  <div class="content">
+    <!-- LEFT COLUMN -->
+    <div class="col">
+
+      <div class="card">
+        <div class="card-header">
+          <div class="icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21Z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="9.5" r="2.3" stroke="currentColor" stroke-width="1.8"/></svg>
+          </div>
+          <h2>Journey Details</h2>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="field grow2"><label>From</label><select><option>NEW DELHI (NDLS)</option></select></div>
+            <div class="field grow2"><label>To</label><select><option>PATNA JN (PNBE)</option></select></div>
+            <div class="field"><label>Date</label><input type="text" value="08/01/2026" /></div>
+            <div class="field" style="flex:0 0 auto; align-self:flex-end;"><button class="btn btn-primary">Find Trains</button></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Boarding Pt</label><input type="text" readonly value="NDLS" /></div>
+            <div class="field"><label>Train No</label><input type="text" readonly value="12310" /></div>
+            <div class="field grow2"><label>Train Type</label><select><option>Mail/Express-E</option></select></div>
+            <div class="field" style="flex:0 0 auto; align-self:flex-end;"><a class="link" href="#">View Availability →</a></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Class</label><select><option>3A - AC 3 Tier</option></select></div>
+            <div class="field grow2">
+              <label>Quota</label>
+              <div class="segmented">
+                <div class="seg active">General</div>
+                <div class="seg">Ladies</div>
+                <div class="seg">Tatkal</div>
+                <div class="seg">Premium Tatkal</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </div>
+          <h2>Fare &amp; Availability</h2>
+          <div class="hint">select a class above to load</div>
+        </div>
+        <div class="card-body">
+          <div class="subhead">Fare Breakdown</div>
+          <table class="data" style="margin-bottom:16px;">
+            <tr><th>Base</th><th>Reservation</th><th>Superfast</th><th>GST</th><th>Catering</th><th>Dynamic</th><th>Total</th></tr>
+            <tr><td>645</td><td>40</td><td>30</td><td>28</td><td>0</td><td>0</td><td class="total-fare">₹743</td></tr>
+          </table>
+          <div class="subhead">Availability</div>
+          <table class="data">
+            <tr><th>Date</th><th>Status</th></tr>
+            <tr><td>08 Jan 2026</td><td><span class="badge success">AVAILABLE 42</span></td></tr>
+            <tr><td>09 Jan 2026</td><td><span class="badge warn">RAC 12</span></td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 20c0-3.3 2.9-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="18" cy="9" r="2.3" stroke="currentColor" stroke-width="1.8"/></svg>
+          </div>
+          <h2>Passenger Details</h2>
+          <div class="hint">4 passengers</div>
+        </div>
+        <div class="card-body">
+          <div class="pax-grid">
+            <div class="pax-row head"><div></div><div>Name</div><div>Age</div><div>Sex</div><div>Berth</div><div>UP</div><div>Sr</div><div>Bed</div></div>
+            <div class="pax-row">
+              <div class="pax-num">1</div>
+              <input type="text" value="Adam" />
+              <input type="text" value="24" />
+              <select><option>M</option></select>
+              <select><option>No Preference</option></select>
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+            </div>
+            <div class="pax-row">
+              <div class="pax-num">2</div>
+              <input type="text" placeholder="Name" />
+              <input type="text" placeholder="Age" />
+              <select><option>M</option></select>
+              <select><option>No Preference</option></select>
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+            </div>
+            <div class="pax-row">
+              <div class="pax-num">3</div>
+              <input type="text" placeholder="Name" />
+              <input type="text" placeholder="Age" />
+              <select><option>M</option></select>
+              <select><option>No Preference</option></select>
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+            </div>
+            <div class="pax-row">
+              <div class="pax-num">4</div>
+              <input type="text" placeholder="Name" />
+              <input type="text" placeholder="Age" />
+              <select><option>M</option></select>
+              <select><option>No Preference</option></select>
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+              <input class="chk" type="checkbox" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col">
+
+      <div class="card">
+        <div class="card-header">
+          <div class="icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.8"/></svg>
+          </div>
+          <h2>Fare &amp; Payment</h2>
+        </div>
+        <div class="card-body">
+          <div class="fare-hero"><span class="curr">₹</span><span class="amount">743</span><button class="btn btn-outline" style="margin-left:auto;">Get Fare</button></div>
+          <div class="row">
+            <div class="field"><label>Mobile</label><input type="text" value="+91 9xxxxxxxxx" /></div>
+            <div class="field"><label>Ticket Slot</label><select><option>Select Auto Slot</option></select></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Gateway</label><select><option>BHIM/UPI</option></select></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Prior Bank / UPI</label><select><option>PayTM-QR_paytm@qr</option></select></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Backup Bank</label><select><option>No Alternate Bank</option></select></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Ticket Profile Name</label><input type="text" value="NDLS_PNBE" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg>
+          </div>
+          <h2>Booking Preferences</h2>
+        </div>
+        <div class="card-body">
+          <div class="toggle-row">
+            <div class="label-group"><div class="t">Auto Upgradation</div><div class="d">Consider for berth auto-upgrade</div></div>
+            <label class="switch"><input type="checkbox" checked /><span class="track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="label-group"><div class="t">Confirm Berths Only</div><div class="d">Book only if berths are confirmed</div></div>
+            <label class="switch"><input type="checkbox" /><span class="track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="label-group"><div class="t">IRCTC Beta UI</div><div class="d">Use IRCTC's beta booking flow</div></div>
+            <label class="switch"><input type="checkbox" /><span class="track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="label-group"><div class="t">Real Chrome (CDP)</div><div class="d">Recommended for reliability</div></div>
+            <label class="switch"><input type="checkbox" checked /><span class="track"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="label-group"><div class="t">Manual Calculate Fare</div><div class="d">I'll click Calculate Fare myself</div></div>
+            <label class="switch"><input type="checkbox" checked /><span class="track"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </div>
+          <h2>IRCTC Account</h2>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="field"><label>Username</label><input type="text" placeholder="IRCTC user id" /></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Password</label><input type="password" placeholder="••••••••" /></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="actionbar">
+    <div class="status"><span class="dot"></span> Fare fetched. Ready to book.</div>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost">Save</button>
+    <button class="btn btn-primary">Book IRCTC</button>
+    <button class="btn btn-danger-outline" disabled>Stop</button>
+  </div>
+
+</div>
+</body>
+</html>

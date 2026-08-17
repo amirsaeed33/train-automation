@@ -4671,9 +4671,31 @@ public sealed class IrctcBookingService : IAsyncDisposable
         {
             try
             {
+                // Gateway often shows a loading spinner first — we previously screenshotted
+                // that spinner before "Click here to pay through QR" / the QR image existed.
+                await WaitForPaymentGatewayReadyAsync(page, progress, cancellationToken);
+
+                var clickedReveal = await ClickQrRevealAsync(page, progress, cancellationToken);
+                if (clickedReveal)
+                {
+                    await page.WaitForTimeoutAsync(1_200);
+                }
+
                 var screenshotPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "payment_qr.png");
-                await page.ScreenshotAsync(new PageScreenshotOptions { Path = screenshotPath, FullPage = false });
-                progress?.Report($"Payment screenshot saved: {screenshotPath}");
+                var qrImage = await WaitForQrImageAsync(page, progress, cancellationToken);
+
+                if (qrImage is not null)
+                {
+                    await qrImage.ScreenshotAsync(new LocatorScreenshotOptions { Path = screenshotPath });
+                    progress?.Report($"QR cropped screenshot saved: {screenshotPath}");
+                    LogClickAudit("BOT_QR cropped screenshot ok");
+                }
+                else
+                {
+                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = screenshotPath, FullPage = false });
+                    progress?.Report($"QR element not found — full page saved: {screenshotPath}");
+                    LogClickAudit("BOT_QR fallback full-page screenshot");
+                }
 
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
@@ -4685,6 +4707,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
             catch (Exception ex)
             {
                 progress?.Report($"Screenshot note: {ex.Message}. Pay in the browser window.");
+                LogClickAudit($"BOT_QR error: {ex.Message}");
             }
         }
 
@@ -4730,6 +4753,232 @@ public sealed class IrctcBookingService : IAsyncDisposable
                 // stop
             }
         }
+    }
+
+    /// <summary>
+    /// Wait until Paytm/iPay loading spinner disappears (or QR UI is ready).
+    /// </summary>
+    private static async Task WaitForPaymentGatewayReadyAsync(
+        IPage page,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await FindQrRevealLocatorAsync(page) is not null
+                || await FindQrImageLocatorAsync(page) is not null)
+            {
+                return;
+            }
+
+            var stillLoading = false;
+            foreach (var frame in page.Frames)
+            {
+                try
+                {
+                    var spinner = frame.Locator(
+                        ".loading, .loader, .spinner, [class*='loading'], [class*='spinner'], .paytm-loader");
+                    if (await spinner.CountAsync() > 0 && await spinner.First.IsVisibleAsync())
+                    {
+                        stillLoading = true;
+                        break;
+                    }
+                }
+                catch
+                {
+                    // ignore detached frames
+                }
+            }
+
+            if (!stillLoading)
+            {
+                await page.WaitForTimeoutAsync(800);
+                return;
+            }
+
+            progress?.Report("Payment gateway still loading — waiting for QR UI...");
+            await page.WaitForTimeoutAsync(700);
+        }
+    }
+
+    private static async Task<bool> ClickQrRevealAsync(
+        IPage page,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(40);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var qrReveal = await FindQrRevealLocatorAsync(page);
+            if (qrReveal is not null)
+            {
+                try
+                {
+                    await qrReveal.ScrollIntoViewIfNeededAsync();
+                    await qrReveal.ClickAsync(new LocatorClickOptions { Timeout = 5_000, Force = true });
+                    progress?.Report("Clicked 'Click here to pay through QR' to reveal QR.");
+                    LogClickAudit("BOT_QR clicked reveal link");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    LogClickAudit($"BOT_QR reveal click failed: {ex.Message}");
+                    try
+                    {
+                        await qrReveal.EvaluateAsync("el => el.click()");
+                        progress?.Report("Clicked QR reveal via JS fallback.");
+                        LogClickAudit("BOT_QR clicked reveal via JS");
+                        return true;
+                    }
+                    catch
+                    {
+                        // keep retrying
+                    }
+                }
+            }
+
+            if (await FindQrImageLocatorAsync(page) is not null)
+            {
+                progress?.Report("QR already visible — skip reveal click.");
+                return false;
+            }
+
+            progress?.Report("Waiting for 'Click here to pay through QR'...");
+            await page.WaitForTimeoutAsync(800);
+        }
+
+        progress?.Report("QR reveal text not found (may already be visible or UI changed).");
+        LogClickAudit("BOT_QR reveal text not found");
+        return false;
+    }
+
+    private static async Task<ILocator?> WaitForQrImageAsync(
+        IPage page,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(25);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var qr = await FindQrImageLocatorAsync(page);
+            if (qr is not null)
+            {
+                return qr;
+            }
+
+            progress?.Report("Waiting for QR image to appear...");
+            await page.WaitForTimeoutAsync(700);
+        }
+
+        return null;
+    }
+
+    private static async Task<ILocator?> FindQrRevealLocatorAsync(IPage page)
+    {
+        var patterns = new[]
+        {
+            new System.Text.RegularExpressions.Regex(
+                @"click\s+here\s+to\s+pay\s+through\s+qr",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            new System.Text.RegularExpressions.Regex(
+                @"pay\s+through\s+qr",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        };
+
+        foreach (var frame in page.Frames)
+        {
+            foreach (var pattern in patterns)
+            {
+                try
+                {
+                    var candidate = frame.GetByText(pattern).First;
+                    if (await candidate.CountAsync() > 0 && await candidate.IsVisibleAsync())
+                    {
+                        return candidate;
+                    }
+                }
+                catch
+                {
+                    // frame may be detached/cross-origin restricted — try next
+                }
+            }
+
+            try
+            {
+                var link = frame.Locator(
+                    "a:has-text('QR'), button:has-text('QR'), span:has-text('pay through QR'), div:has-text('Click here to pay through QR')").First;
+                if (await link.CountAsync() > 0 && await link.IsVisibleAsync())
+                {
+                    return link;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<ILocator?> FindQrImageLocatorAsync(IPage page)
+    {
+        var selectors = new[]
+        {
+            "img[src*='qr']",
+            "img[alt*='QR']",
+            "img[alt*='qr']",
+            "img[src*='QR']",
+            "canvas",
+            "img[src^='data:image']"
+        };
+
+        foreach (var frame in page.Frames)
+        {
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var list = frame.Locator(selector);
+                    var count = await list.CountAsync();
+                    for (var i = 0; i < count; i++)
+                    {
+                        var candidate = list.Nth(i);
+                        if (!await candidate.IsVisibleAsync())
+                        {
+                            continue;
+                        }
+
+                        var box = await candidate.BoundingBoxAsync();
+                        if (box is { Width: >= 80, Height: >= 80 })
+                        {
+                            return candidate;
+                        }
+
+                        if (selector.Contains("canvas", StringComparison.Ordinal)
+                            || selector.Contains("data:image", StringComparison.Ordinal))
+                        {
+                            if (box is null || (box.Width >= 60 && box.Height >= 60))
+                            {
+                                return candidate;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // frame may be detached/cross-origin restricted — try next
+                }
+            }
+        }
+
+        return null;
     }
 
     public async ValueTask DisposeAsync()

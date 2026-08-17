@@ -16,29 +16,81 @@ public partial class Form1 : Form
         travelDatePicker.Value = DateTime.Today.AddDays(1);
     }
 
+    /// <summary>Hide the standalone title bar when this form is hosted inside MainShellForm.</summary>
+    public void PrepareForShellEmbed()
+    {
+        if (titlePanel is not null)
+        {
+            titlePanel.Visible = false;
+            titlePanel.Height = 0;
+        }
+
+        if (contentPanel is not null)
+        {
+            contentPanel.Dock = DockStyle.Fill;
+        }
+    }
+
     private void Form1_Load(object sender, EventArgs e)
     {
+        FlattenLayout();
         LoadStations();
         ConfigurePassengerGrid();
-        ConfigureAvailabilityGrids();
         ConfigureDropdowns();
+        ApplyDarkThemeToInputs();
         LoadBookingConfigIntoUi();
+    }
+
+    private void ApplyDarkThemeToInputs()
+    {
+        var inputs = new Control[] { 
+            fromStationCombo, toStationCombo, boardingPointText,
+            trainNoText, trainTypeCombo, classCombo,
+            mobileText, ticketSlotCombo, gatewayCombo, priorBankCombo, backupBankCombo,
+            ticketNameText, irctcUserCombo 
+        };
+
+        foreach (var c in inputs)
+        {
+            c.Font = new Font("Segoe UI", 9F);
+            c.BackColor = UiTheme.Surface;
+            c.ForeColor = UiTheme.Text;
+        }
+        
+        travelDatePicker.Font = new Font("Segoe UI", 9F);
+        travelDatePicker.CalendarMonthBackground = UiTheme.Surface;
+
+        // Increase all label fonts in content panel back to readable sizes
+        foreach (Control c in contentPanel.Controls)
+        {
+            if (c is Label lbl && c != findButton && c != getFareButton && c != availabilityLink)
+            {
+                lbl.Font = new Font("Segoe UI", 9F);
+            }
+        }
     }
 
     private void LoadBookingConfigIntoUi()
     {
-        irctcUserText.Text = _config.Credentials.Username;
-        irctcPassText.Text = _config.Credentials.Password;
+        irctcUserCombo.Items.Clear();
+        if (!string.IsNullOrWhiteSpace(_config.Credentials.Username))
+        {
+            irctcUserCombo.Items.Add(_config.Credentials.Username);
+            irctcUserCombo.SelectedIndex = 0;
+        }
+        else
+        {
+            irctcUserCombo.Text = string.Empty;
+        }
+
         if (!string.IsNullOrWhiteSpace(_config.MobileNumber))
         {
             mobileText.Text = _config.MobileNumber;
         }
 
         confirmBerthsCheck.Checked = _config.ConfirmBerthsOnly;
-        autoUpgradeCheck.Checked = _config.AutoUpgrade;
         useBetaViewCheck.Checked = _config.UseBetaView;
         useRealChromeCheck.Checked = _config.UseRealChrome;
-        handOffCalcFareCheck.Checked = _config.HandOffCalculateFare;
 
         if (!string.IsNullOrWhiteSpace(_config.PaymentMethod))
         {
@@ -58,8 +110,7 @@ public partial class Form1 : Form
         passengerGrid.CellEndEdit += (_, _) => SaveIrctcConfigFromUi();
         passengerGrid.CurrentCellDirtyStateChanged += PassengerGrid_CurrentCellDirtyStateChanged;
         mobileText.Leave += (_, _) => SaveIrctcConfigFromUi();
-        irctcUserText.Leave += (_, _) => SaveIrctcConfigFromUi();
-        irctcPassText.Leave += (_, _) => SaveIrctcConfigFromUi();
+        irctcUserCombo.Leave += (_, _) => SaveIrctcConfigFromUi();
     }
 
     private void PassengerGrid_CurrentCellDirtyStateChanged(object? sender, EventArgs e)
@@ -144,123 +195,98 @@ public partial class Form1 : Form
         backupBankCombo.SelectedIndex = 0;
     }
 
-    private void ConfigureAvailabilityGrids()
-    {
-        fareGrid.AutoGenerateColumns = false;
-        fareGrid.Columns.Clear();
-        fareGrid.Rows.Clear();
-        AddFareCol("Base");
-        AddFareCol("Reservation");
-        AddFareCol("Superfast");
-        AddFareCol("Other");
-        AddFareCol("Tatkal");
-        AddFareCol("GST");
-        AddFareCol("Catering");
-        AddFareCol("Dynamic");
-        AddFareCol("Total");
-        fareGrid.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
-            string.Empty, string.Empty, string.Empty);
-
-        availabilityGrid.AutoGenerateColumns = false;
-        availabilityGrid.Columns.Clear();
-        availabilityGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = "Date",
-            Name = "Date",
-            Width = 110,
-            SortMode = DataGridViewColumnSortMode.NotSortable
-        });
-        availabilityGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = "Availability",
-            Name = "Availability",
-            Width = 180,
-            SortMode = DataGridViewColumnSortMode.NotSortable
-        });
-    }
-
-    private void AddFareCol(string header)
-    {
-        fareGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = header,
-            Name = header,
-            Width = 75,
-            SortMode = DataGridViewColumnSortMode.NotSortable
-        });
-    }
-
     private void ConfigurePassengerGrid()
     {
         passengerGrid.AutoGenerateColumns = false;
         passengerGrid.AllowUserToAddRows = false;
         passengerGrid.AllowUserToDeleteRows = false;
         passengerGrid.RowHeadersVisible = false;
+        passengerGrid.BackgroundColor = UiTheme.PageBg;
+        passengerGrid.BorderStyle = BorderStyle.None;
+        passengerGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        passengerGrid.MultiSelect = false;
+        passengerGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+
+        passengerGrid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+        {
+            BackColor = UiTheme.Surface,
+            ForeColor = UiTheme.TextMuted,
+            Font = new Font("Segoe UI", 9F),
+            SelectionBackColor = UiTheme.Surface
+        };
+        passengerGrid.DefaultCellStyle = new DataGridViewCellStyle
+        {
+            BackColor = UiTheme.Surface,
+            ForeColor = UiTheme.Text,
+            Font = new Font("Segoe UI", 9F),
+            SelectionBackColor = UiTheme.SurfaceHigh,
+            SelectionForeColor = UiTheme.Text
+        };
+        passengerGrid.EnableHeadersVisualStyles = false;
+        passengerGrid.RowTemplate.Height = 26;
+
         passengerGrid.Columns.Clear();
 
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno", Name = "Sno", Width = 40, ReadOnly = true });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", Name = "Name", Width = 120 });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age", Name = "Age", Width = 45 });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno",  Name = "Sno",  FillWeight = 40,  ReadOnly = true });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", Name = "Name", FillWeight = 160 });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age",  Name = "Age",  FillWeight = 40  });
 
-        var sexColumn = new DataGridViewComboBoxColumn
-        {
-            HeaderText = "Sex",
-            Name = "Sex",
-            Width = 50,
-            FlatStyle = FlatStyle.Flat
-        };
+        var sexColumn = new DataGridViewComboBoxColumn { HeaderText = "Sex", Name = "Sex", FillWeight = 50, FlatStyle = FlatStyle.Flat };
         sexColumn.Items.AddRange("M", "F", "T");
         passengerGrid.Columns.Add(sexColumn);
 
-        var berthColumn = new DataGridViewComboBoxColumn
-        {
-            HeaderText = "Berth",
-            Name = "Berth",
-            Width = 90,
-            FlatStyle = FlatStyle.Flat
-        };
+        var berthColumn = new DataGridViewComboBoxColumn { HeaderText = "Berth", Name = "Berth", FillWeight = 120, FlatStyle = FlatStyle.Flat };
         berthColumn.Items.AddRange("No Choice", "Lower", "Middle", "Upper", "Side Lower", "Side Upper");
         passengerGrid.Columns.Add(berthColumn);
 
-        var foodColumn = new DataGridViewComboBoxColumn
-        {
-            HeaderText = "Food",
-            Name = "Food",
-            Width = 80,
-            FlatStyle = FlatStyle.Flat
-        };
+        var foodColumn = new DataGridViewComboBoxColumn { HeaderText = "Food", Name = "Food", FillWeight = 90, FlatStyle = FlatStyle.Flat };
         foodColumn.Items.AddRange("No Choice", "Veg", "Non-Veg");
         passengerGrid.Columns.Add(foodColumn);
 
-        var nationalityColumn = new DataGridViewComboBoxColumn
-        {
-            HeaderText = "Nationality",
-            Name = "Nationality",
-            Width = 90,
-            FlatStyle = FlatStyle.Flat
-        };
+        var nationalityColumn = new DataGridViewComboBoxColumn { HeaderText = "Nationality", Name = "Nationality", FillWeight = 110, FlatStyle = FlatStyle.Flat };
         nationalityColumn.Items.Add("India-IN");
         passengerGrid.Columns.Add(nationalityColumn);
 
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Passport", Name = "Passport", Width = 80 });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child", Name = "Child", Width = 50 });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior", Name = "Senior", Width = 55 });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed", Name = "Bed", Width = 45 });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn  { HeaderText = "Passport", Name = "Passport", FillWeight = 85  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child",    Name = "Child",    FillWeight = 55  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior",   Name = "Senior",   FillWeight = 70  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed",      Name = "Bed",      FillWeight = 50  });
 
         UpdatePassengerRowCount(GetPassengerRowLimit());
     }
 
     private int GetPassengerRowLimit() =>
-        quotaGeneralRadio.Checked || quotaLadiesRadio.Checked ? 4 : 6;
+        quotaGeneralRadio.Checked || quotaLadiesRadio.Checked ? 6 : 4;
 
     private void QuotaRadio_CheckedChanged(object? sender, EventArgs e)
     {
+        if (sender is RadioButton radio)
+        {
+            ApplyQuotaPillStyle(radio);
+        }
+
         if (sender is RadioButton { Checked: false })
         {
             return;
         }
 
         UpdatePassengerRowCount(GetPassengerRowLimit());
+    }
+
+    private static void ApplyQuotaPillStyle(RadioButton radio)
+    {
+        if (radio.Checked)
+        {
+            radio.BackColor = UiTheme.Primary;
+            radio.ForeColor = Color.White;
+            radio.FlatAppearance.BorderColor = UiTheme.Primary;
+        }
+        else
+        {
+            radio.BackColor = UiTheme.PageBg;
+            radio.ForeColor = UiTheme.TextMuted;
+            radio.FlatAppearance.BorderColor = UiTheme.Border;
+        }
     }
 
     private void UpdatePassengerRowCount(int rowCount)
@@ -291,6 +317,11 @@ public partial class Form1 : Form
                 passengerGrid.Rows.Add(index, string.Empty, string.Empty, "M", "No Choice", "No Choice", "India-IN", string.Empty, false, false, false);
             }
         }
+        
+        int gridHeight = 28 + (rowCount * 28) + 2; 
+        passengerGrid.Height = gridHeight; 
+        
+        PositionBottomElements();
     }
 
     private static void PopulateStationCombo(ComboBox comboBox, IReadOnlyList<StationInfo> stations)
@@ -434,28 +465,12 @@ public partial class Form1 : Form
         // Fare/availability is checked on IRCTC during Book IRCTC — not indianrail.gov.in.
         ApplyTrainSelection(e.Train, e.TravelClass);
         ClearFareAvailabilityPanel();
-        trainListHeader.Text =
-            $"Selected — Train {e.Train.TrainNumber} / {e.TravelClass}. Click Book IRCTC when ready.";
         statusLabel.Text =
             $"Selected {e.Train.TrainNumber} ({e.TravelClass}). Fill passengers, then Book IRCTC.";
     }
 
     private void ClearFareAvailabilityPanel()
     {
-        if (fareGrid.Rows.Count == 0)
-        {
-            fareGrid.Rows.Add(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty,
-                string.Empty, string.Empty, string.Empty);
-        }
-        else
-        {
-            for (var i = 0; i < fareGrid.Columns.Count; i++)
-            {
-                fareGrid.Rows[0].Cells[i].Value = string.Empty;
-            }
-        }
-
-        availabilityGrid.Rows.Clear();
         fareText.Text = "0";
     }
 
@@ -549,11 +564,6 @@ public partial class Form1 : Form
         }
 
         var mobile = mobileText.Text.Trim();
-        if (mobile.Length != 10 || !mobile.All(char.IsDigit))
-        {
-            MessageBox.Show(this, "Enter a valid 10-digit mobile number.", "Save", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
 
         var booking = new TrainBookingRecord
         {
@@ -572,7 +582,7 @@ public partial class Form1 : Form
             Passengers = passengers,
             Preferences = new BookingPreferences
             {
-                AutoUpgradation = autoUpgradeCheck.Checked,
+                AutoUpgradation = false,
                 BookOnlyIfConfirmBerths = confirmBerthsCheck.Checked,
                 TicketSlot = ticketSlotCombo.SelectedItem?.ToString() ?? string.Empty,
                 Gateway = gatewayCombo.SelectedItem?.ToString() ?? string.Empty,
@@ -621,14 +631,11 @@ public partial class Form1 : Form
 
     private void SaveIrctcConfigFromUi()
     {
-        _config.Credentials.Username = irctcUserText.Text.Trim();
-        _config.Credentials.Password = irctcPassText.Text;
+        _config.Credentials.Username = irctcUserCombo.Text.Trim();
         _config.MobileNumber = mobileText.Text.Trim();
         _config.ConfirmBerthsOnly = confirmBerthsCheck.Checked;
-        _config.AutoUpgrade = autoUpgradeCheck.Checked;
         _config.UseBetaView = useBetaViewCheck.Checked;
         _config.UseRealChrome = useRealChromeCheck.Checked;
-        _config.HandOffCalculateFare = handOffCalcFareCheck.Checked;
         _config.PaymentMethod = gatewayCombo.SelectedItem?.ToString() ?? "BHIM/UPI";
         _config.PaymentProvider = priorBankCombo.SelectedItem?.ToString() ?? "PAYTM";
         _config.PreferredClass = classCombo.SelectedItem?.ToString() ?? _config.PreferredClass;
@@ -796,9 +803,9 @@ public partial class Form1 : Form
 
     private void StopButton_Click(object? sender, EventArgs e)
     {
+        if (_cts == null || _cts.IsCancellationRequested) return;
         _cts?.Cancel();
         statusLabel.Text = "Stopping automation...";
-        stopButton.Enabled = false;
     }
 
     private string GetSelectedQuota()
