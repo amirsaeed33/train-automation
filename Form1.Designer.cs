@@ -153,7 +153,7 @@ namespace train_automation
             contentPanel.Dock = DockStyle.Fill;
             contentPanel.Location = new Point(0, 56);
             contentPanel.Name = "contentPanel";
-            contentPanel.Size = new Size(700, 700);
+            contentPanel.Dock = DockStyle.Fill;;
             contentPanel.TabIndex = 1;
 
             // =========================================================

@@ -223,15 +223,15 @@ public partial class Form1 : Form
             SelectionForeColor = UiTheme.Text
         };
         passengerGrid.EnableHeadersVisualStyles = false;
-        passengerGrid.RowTemplate.Height = 26;
+        passengerGrid.RowTemplate.Height = 34;
 
         passengerGrid.Columns.Clear();
 
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno",  Name = "Sno",  FillWeight = 40,  ReadOnly = true });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno",  Name = "Sno",  FillWeight = 55,  ReadOnly = true });
         passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", Name = "Name", FillWeight = 160 });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age",  Name = "Age",  FillWeight = 40  });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age",  Name = "Age",  FillWeight = 50  });
 
-        var sexColumn = new DataGridViewComboBoxColumn { HeaderText = "Sex", Name = "Sex", FillWeight = 50, FlatStyle = FlatStyle.Flat };
+        var sexColumn = new DataGridViewComboBoxColumn { HeaderText = "Sex", Name = "Sex", FillWeight = 65, FlatStyle = FlatStyle.Flat };
         sexColumn.Items.AddRange("M", "F", "T");
         passengerGrid.Columns.Add(sexColumn);
 
@@ -247,8 +247,8 @@ public partial class Form1 : Form
         nationalityColumn.Items.Add("India-IN");
         passengerGrid.Columns.Add(nationalityColumn);
 
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn  { HeaderText = "Passport", Name = "Passport", FillWeight = 85  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child",    Name = "Child",    FillWeight = 55  });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn  { HeaderText = "Passport", Name = "Passport", FillWeight = 110  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child",    Name = "Child",    FillWeight = 65  });
         passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior",   Name = "Senior",   FillWeight = 70  });
         passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed",      Name = "Bed",      FillWeight = 50  });
 
@@ -386,7 +386,7 @@ public partial class Form1 : Form
             if (TrainRouteCache.TryGet(settings, out var cachedTrains))
             {
                 ShowTrainListPopup(cachedTrains, $"{fromStation.Code} -> {toStation.Code}");
-                statusLabel.Text = $"Loaded {cachedTrains.Count} train(s) from cache (valid 2 days). Click a class in the popup.";
+                statusLabel.Text = $"Loaded {cachedTrains.Count} train(s) from cache (valid 1 hour). Click a class in the popup.";
                 return;
             }
 
@@ -416,10 +416,29 @@ public partial class Form1 : Form
         }
     }
 
-    private static async Task<IReadOnlyList<TrainResult>> SearchTrainsAsync(TrainSearchSettings settings)
+    private async Task<IReadOnlyList<TrainResult>> SearchTrainsAsync(TrainSearchSettings settings)
     {
-        await using var scraper = new EtrainScraperService();
+        // Using Ghumo.live as requested by user
+        await using var scraper = new GhumoScraperService();
         return await scraper.SearchTrainsAsync(settings);
+    }
+
+    private Task<string?> SolveCaptchaDialogAsync(IWin32Window? owner, byte[] imageBytes)
+    {
+        var tcs = new TaskCompletionSource<string?>();
+        this.Invoke(() =>
+        {
+            using var dialog = new CaptchaDialog(imageBytes);
+            if (dialog.ShowDialog(owner ?? this) == DialogResult.OK)
+            {
+                tcs.SetResult(dialog.Answer);
+            }
+            else
+            {
+                tcs.SetResult(null);
+            }
+        });
+        return tcs.Task;
     }
 
     private static string GetFriendlySearchError(Exception ex)
@@ -459,14 +478,12 @@ public partial class Form1 : Form
         _trainListDialog.Show(this);
     }
 
-    private void TrainListDialog_ClassSelected(object? sender, TrainClassSelectedEventArgs e)
+    private async void TrainListDialog_ClassSelected(object? sender, TrainClassSelectedEventArgs e)
     {
-        // Same as main: selecting a class only picks train/class for IRCTC booking.
-        // Fare/availability is checked on IRCTC during Book IRCTC — not indianrail.gov.in.
+        // Keep the UI selection logic exactly like the etrain.info version
         ApplyTrainSelection(e.Train, e.TravelClass);
         ClearFareAvailabilityPanel();
-        statusLabel.Text =
-            $"Selected {e.Train.TrainNumber} ({e.TravelClass}). Fill passengers, then Book IRCTC.";
+        statusLabel.Text = $"Selected {e.Train.TrainNumber} ({e.TravelClass}). Ready to book!";
     }
 
     private void ClearFareAvailabilityPanel()

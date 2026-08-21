@@ -5,7 +5,7 @@ namespace train_automation;
 
 public static class TrainRouteCache
 {
-    private static readonly TimeSpan CacheLifetime = TimeSpan.FromDays(2);
+    private static readonly TimeSpan CacheLifetime = TimeSpan.FromHours(1);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,

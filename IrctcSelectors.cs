@@ -70,7 +70,7 @@ public static class IrctcSelectors
     public const string BetaStationOption = "[role='option']";
     public const string BetaDateButton = "[role='button'][aria-label='Select travel date']";
     public const string BetaQuotaCombobox = "[role='combobox'][aria-label='Quota']";
-    public const string BetaSearchButton = "button:has-text('Search Trains'), [role='button']:has-text('Search Trains')";
+    public const string BetaSearchButton = "button:has-text('Search Trains'), [role='button']:has-text('Search Trains'), button:has-text('Search'), [role='button']:has-text('Search')";
     public const string BetaCalendarPanel = ".custom-calendar-panel, .ui-datepicker";
     public const string BetaCalendarNext = "a.ui-datepicker-next";
     public const string BetaCalendarPrev = "a.ui-datepicker-prev";

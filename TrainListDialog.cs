@@ -83,14 +83,7 @@ public sealed class TrainListDialog : Form
         AddCol(nameof(TrainResult.ToStation), "To", 60);
         AddCol(nameof(TrainResult.Arrival), "Arrival", 70);
         AddCol(nameof(TrainResult.TravelTime), "Travel", 65);
-        AddCol(nameof(TrainResult.AvailableClasses), "Classes", 190);
-        AddCol(nameof(TrainResult.Monday), "M", 32);
-        AddCol(nameof(TrainResult.Tuesday), "T", 32);
-        AddCol(nameof(TrainResult.Wednesday), "W", 32);
-        AddCol(nameof(TrainResult.Thursday), "T", 32);
-        AddCol(nameof(TrainResult.Friday), "F", 32);
-        AddCol(nameof(TrainResult.Saturday), "S", 32);
-        AddCol(nameof(TrainResult.Sunday), "S", 32);
+        AddCol(nameof(TrainResult.AvailableClasses), "Available Classes (Click to Select)", 300);
     }
 
     private void AddCol(string property, string header, int width)
@@ -123,15 +116,6 @@ public sealed class TrainListDialog : Form
                     cell.Style.Font = _classLinkFont;
                     cell.Style.SelectionForeColor = Color.LightSkyBlue;
                     continue;
-                }
-
-                if (column.DataPropertyName is nameof(TrainResult.Monday) or nameof(TrainResult.Tuesday)
-                    or nameof(TrainResult.Wednesday) or nameof(TrainResult.Thursday) or nameof(TrainResult.Friday)
-                    or nameof(TrainResult.Saturday) or nameof(TrainResult.Sunday))
-                {
-                    var runs = cell.Value?.ToString() is "Y";
-                    cell.Style.ForeColor = runs ? Color.MediumSeaGreen : UiTheme.TextMuted;
-                    cell.Style.Font = runs ? new Font(_grid.Font, FontStyle.Bold) : _grid.Font;
                 }
             }
         }
@@ -260,11 +244,11 @@ public sealed class TrainListDialog : Form
         }
         else
         {
-            // Key can be resolved later from the live Indian Railways page
             classLinkKey = $"{train.TrainNumber}^{travelClass}";
         }
 
         ClassSelected?.Invoke(this, new TrainClassSelectedEventArgs(train, travelClass, classLinkKey));
+        this.Close();
     }
 
     private void InitializeComponent()

@@ -144,13 +144,21 @@ public sealed class MainShellForm : Form
 
         if (key is "settings" or "logs")
         {
-            MessageBox.Show(this,
-                key == "settings"
-                    ? "Settings screen will be wired next."
-                    : "Logs screen will be wired next.",
-                "RailBot Pro",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            if (key == "logs")
+            {
+                // TEMPORARY: Run ghumo.live scraper test
+                _ = Task.Run(async () => await GhumoScraperTest.TestAsync("NDLS", "HWH",
+                    DateTime.Today.AddDays(5).ToString("yyyy-MM-dd")));
+                MessageBox.Show(this,
+                    "Ghumo.live test started!\nA browser will open — watch the console for output.",
+                    "Ghumo Test",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            MessageBox.Show(this, "Settings screen will be wired next.", "RailBot Pro",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 

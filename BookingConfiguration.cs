@@ -45,7 +45,7 @@ public sealed class BookingConfiguration
     /// When true (beta), bot fills UPI then waits — YOU click Calculate Fare once.
     /// Playwright-launched Chrome is often killed on that submit even with a perfect single click.
     /// </summary>
-    public bool HandOffCalculateFare { get; set; } = true;
+    public bool HandOffCalculateFare { get; set; } = false;
 
     /// <summary>CDP endpoint, e.g. http://127.0.0.1:9222</summary>
     public string ChromeCdpUrl { get; set; } = "http://127.0.0.1:9222";

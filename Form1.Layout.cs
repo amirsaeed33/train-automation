@@ -10,7 +10,7 @@ public partial class Form1
     // contentPanel is 700px wide, no scrollbar. Controls: X=8 to X=688
     private const int LPAD = 12;   // left padding
     private const int RPAD = 12;   // right padding
-    private const int FULL = 860; // contentPanel width
+    private const int FULL = 880; // contentPanel width
 
     // Each row: caption at rowTop, input at rowTop+19, next row at rowTop+56
     private const int INP_OFF = 19;
@@ -39,26 +39,26 @@ public partial class Form1
 
         // ── ROW 1: FROM | TO | DATE | FIND | AVAILABILITY ──────────────
         int r1 = 8;
-        int x_from  = LPAD;                     // 12
-        int x_to    = x_from + 200 + 12;        // 224
-        int x_date  = x_to   + 200 + 12;        // 436
-        int x_find  = x_date + 140 + 12;        // 588
-        int x_avail = x_find + 100 + 12;        // 700
+        int x_from  = LPAD;                     
+        int x_to    = x_from + 175 + 12;        
+        int x_date  = x_to   + 175 + 12;        
+        int x_find  = x_date + 125 + 12;        
+        int x_avail = x_find + 80 + 12;         
 
         fromCaption.Location      = new Point(x_from, r1);
         fromStationCombo.Location = new Point(x_from, r1 + INP_OFF);
-        fromStationCombo.Width    = 200;
+        fromStationCombo.Width    = 175;
 
         toCaption.Location        = new Point(x_to, r1);
         toStationCombo.Location   = new Point(x_to, r1 + INP_OFF);
-        toStationCombo.Width      = 200;
+        toStationCombo.Width      = 175;
 
         dateCaption.Location      = new Point(x_date, r1);
         travelDatePicker.Location = new Point(x_date, r1 + INP_OFF);
-        travelDatePicker.Width    = 140;
+        travelDatePicker.Width    = 125;
 
         findButton.Location       = new Point(x_find, r1 + INP_OFF);
-        findButton.Size           = new Size(100, 27);
+        findButton.Size           = new Size(80, 27);
 
         availabilityLink.Location = new Point(x_avail, r1 + INP_OFF + 5);
 
@@ -81,47 +81,48 @@ public partial class Form1
         trainTypeCombo.Width        = FULL - c3 - RPAD;
         trainTypeCombo.Anchor       = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-        // ── ROW 3: CLASS | QUOTA radios ────────────────────────────────
-        // CLASS gets a fixed narrow width, QUOTA label + pills fill the rest
-        int r3       = r2 + ROW_H;
-        int x_cls    = LPAD;
-        int cls_w    = 130;                   // CLASS combo width
-        int x_qcap   = x_cls + cls_w + 16;   // QUOTA label right after CLASS
-        int x_radios = x_qcap + 58;          // pills start after "QUOTA" label
+        // ── ROW 3: CLASS | QUOTA (same row) ──────────────────────────────
+        int r3    = r2 + ROW_H;
+        int cls_w = 130;
 
-        classCaption.Location      = new Point(x_cls, r3);
-        classCombo.Location        = new Point(x_cls, r3 + INP_OFF);
-        classCombo.Width           = cls_w;
+        classCaption.Location  = new Point(LPAD, r3);
+        classCombo.Location    = new Point(LPAD, r3 + INP_OFF);
+        classCombo.Width       = cls_w;
+        classCombo.MaximumSize = new Size(cls_w, 100);
 
-        quotaCaption.Location      = new Point(x_qcap, r3 + INP_OFF + 3);
+        // QUOTA label starts right after CLASS combo
+        int x_qcap = LPAD + cls_w + 20;   // = 162
+        quotaCaption.AutoSize = false;
+        quotaCaption.Width    = 80;        // fixed width so it never bleeds into pills
+        quotaCaption.Location = new Point(x_qcap, r3 + INP_OFF + 3);
 
-        // Space the 4 pills evenly across the remaining width
-        // Available: FULL - RPAD - x_radios  ≈  860 - 12 - (cls_w+16+58) = 860-12-204 = 644
-        int pillGap = 6;
+        // Pills start after the fixed-width QUOTA label with extra padding
+        int x_pills = x_qcap + 90;        // = 232 — well clear of "QUOTA" text
+        int pillGap = 8;
         int pillW1  = 82;    // "General"
         int pillW2  = 72;    // "Ladies"
         int pillW3  = 72;    // "Tatkal"
         int pillW4  = 138;   // "Premium Tatkal"
 
-        quotaGeneralRadio.Location = new Point(x_radios,                                  r3 + INP_OFF - 2);
+        quotaGeneralRadio.Location = new Point(x_pills,                                                          r3 + INP_OFF - 2);
         quotaGeneralRadio.Size     = new Size(pillW1, 24);
 
-        quotaLadiesRadio.Location  = new Point(x_radios + pillW1 + pillGap,               r3 + INP_OFF - 2);
+        quotaLadiesRadio.Location  = new Point(x_pills + pillW1 + pillGap,                                       r3 + INP_OFF - 2);
         quotaLadiesRadio.Size      = new Size(pillW2, 24);
 
-        quotaTatkalRadio.Location  = new Point(x_radios + pillW1 + pillGap + pillW2 + pillGap,              r3 + INP_OFF - 2);
+        quotaTatkalRadio.Location  = new Point(x_pills + pillW1 + pillGap + pillW2 + pillGap,                    r3 + INP_OFF - 2);
         quotaTatkalRadio.Size      = new Size(pillW3, 24);
 
-        quotaPremiumRadio.Location = new Point(x_radios + pillW1 + pillGap + pillW2 + pillGap + pillW3 + pillGap, r3 + INP_OFF - 2);
+        quotaPremiumRadio.Location = new Point(x_pills + pillW1 + pillGap + pillW2 + pillGap + pillW3 + pillGap, r3 + INP_OFF - 2);
         quotaPremiumRadio.Size     = new Size(pillW4, 24);
 
-        // ── PASSENGER TABLE (full usable width, stretches with window) ──────────────────
+        // ── PASSENGER TABLE ───────────────────────────────────────────────
         int tableTop = r3 + ROW_H;
         passengerGrid.Dock     = DockStyle.None;
         passengerGrid.Anchor   = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
         passengerGrid.Location = new Point(LPAD, tableTop);
-        passengerGrid.Width    = FULL - LPAD - RPAD;  // fills full width
-        passengerGrid.Height   = 196;                  // 6 rows default
+        passengerGrid.Width    = FULL - LPAD - RPAD;
+        passengerGrid.Height   = 196;
 
         rupeeLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
         fareText.Font   = new Font("Segoe UI", 9F, FontStyle.Bold);
