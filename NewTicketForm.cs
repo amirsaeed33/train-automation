@@ -1,6 +1,6 @@
 namespace train_automation;
 
-public partial class Form1 : Form
+public partial class NewTicketForm : Form
 {
     private IrctcBookingService? _irctcService;
     private readonly BookingConfiguration _config = BookingConfiguration.Load();
@@ -10,7 +10,7 @@ public partial class Form1 : Form
     private TrainSelection? _selectedTrain;
     private TrainListDialog? _trainListDialog;
 
-    public Form1()
+    public NewTicketForm()
     {
         InitializeComponent();
         travelDatePicker.Value = DateTime.Today.AddDays(1);
@@ -31,7 +31,7 @@ public partial class Form1 : Form
         }
     }
 
-    private void Form1_Load(object sender, EventArgs e)
+    private void NewTicketForm_Load(object sender, EventArgs e)
     {
         FlattenLayout();
         LoadStations();
@@ -179,7 +179,10 @@ public partial class Form1 : Form
 
     private void ConfigureDropdowns()
     {
+        getFareButton.Visible = quotaTatkalRadio.Checked || quotaPremiumRadio.Checked;
+
         trainTypeCombo.Items.AddRange(["Mail/Express-E", "Passenger", "EMU", "Superfast", "Rajdhani"]);
+        trainTypeCombo.SelectedIndexChanged += TrainTypeCombo_SelectedIndexChanged;
         trainTypeCombo.SelectedIndex = 0;
 
         ticketSlotCombo.Items.AddRange(["Select_Auto Slot", "Slot-1", "Slot-2"]);
@@ -205,7 +208,7 @@ public partial class Form1 : Form
         passengerGrid.BorderStyle = BorderStyle.None;
         passengerGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         passengerGrid.MultiSelect = false;
-        passengerGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        passengerGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
 
         passengerGrid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
         {
@@ -223,34 +226,41 @@ public partial class Form1 : Form
             SelectionForeColor = UiTheme.Text
         };
         passengerGrid.EnableHeadersVisualStyles = false;
-        passengerGrid.RowTemplate.Height = 34;
+        passengerGrid.ColumnHeadersHeight = 26;
+        passengerGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        passengerGrid.RowTemplate.Height = 24;
 
         passengerGrid.Columns.Clear();
 
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno",  Name = "Sno",  FillWeight = 55,  ReadOnly = true });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", Name = "Name", FillWeight = 160 });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age",  Name = "Age",  FillWeight = 50  });
+        // Fixed pixel widths — wide enough that headers don't truncate (Sno/Age/Child/Senior/Bed)
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno",  Name = "Sno",  Width = 44,  ReadOnly = true });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", Name = "Name", Width = 155 });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age",  Name = "Age",  Width = 44  });
 
-        var sexColumn = new DataGridViewComboBoxColumn { HeaderText = "Sex", Name = "Sex", FillWeight = 65, FlatStyle = FlatStyle.Flat };
+        var sexColumn = new DataGridViewComboBoxColumn { HeaderText = "Sex", Name = "Sex", Width = 58, FlatStyle = FlatStyle.Flat };
         sexColumn.Items.AddRange("M", "F", "T");
         passengerGrid.Columns.Add(sexColumn);
 
-        var berthColumn = new DataGridViewComboBoxColumn { HeaderText = "Berth", Name = "Berth", FillWeight = 120, FlatStyle = FlatStyle.Flat };
+        var berthColumn = new DataGridViewComboBoxColumn { HeaderText = "Berth", Name = "Berth", Width = 105, FlatStyle = FlatStyle.Flat };
         berthColumn.Items.AddRange("No Choice", "Lower", "Middle", "Upper", "Side Lower", "Side Upper");
         passengerGrid.Columns.Add(berthColumn);
 
-        var foodColumn = new DataGridViewComboBoxColumn { HeaderText = "Food", Name = "Food", FillWeight = 90, FlatStyle = FlatStyle.Flat };
+        var foodColumn = new DataGridViewComboBoxColumn { HeaderText = "Food", Name = "Food", Width = 82, FlatStyle = FlatStyle.Flat };
         foodColumn.Items.AddRange("No Choice", "Veg", "Non-Veg");
+        // Hidden by default — Mail/Express (default train type) has no food service.
+        // TrainTypeCombo_SelectedIndexChanged will show it for premium trains (Rajdhani etc.).
+        foodColumn.Visible = false;
         passengerGrid.Columns.Add(foodColumn);
 
-        var nationalityColumn = new DataGridViewComboBoxColumn { HeaderText = "Nationality", Name = "Nationality", FillWeight = 110, FlatStyle = FlatStyle.Flat };
+        var nationalityColumn = new DataGridViewComboBoxColumn { HeaderText = "Nationality", Name = "Nationality", Width = 105, FlatStyle = FlatStyle.Flat };
         nationalityColumn.Items.Add("India-IN");
         passengerGrid.Columns.Add(nationalityColumn);
 
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn  { HeaderText = "Passport", Name = "Passport", FillWeight = 110  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child",    Name = "Child",    FillWeight = 65  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior",   Name = "Senior",   FillWeight = 70  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed",      Name = "Bed",      FillWeight = 50  });
+        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn  { HeaderText = "Passport", Name = "Passport", Width = 92  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child",    Name = "Child",    Width = 56  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior",   Name = "Senior",   Width = 62  });
+        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed",      Name = "Bed",      Width = 48  });
+
 
         UpdatePassengerRowCount(GetPassengerRowLimit());
     }
@@ -258,35 +268,28 @@ public partial class Form1 : Form
     private int GetPassengerRowLimit() =>
         quotaGeneralRadio.Checked || quotaLadiesRadio.Checked ? 6 : 4;
 
+    private void TrainTypeCombo_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        var type = trainTypeCombo.SelectedItem?.ToString() ?? string.Empty;
+        var hasFood = type.Equals("Rajdhani", StringComparison.OrdinalIgnoreCase) || 
+                      type.Equals("Shatabdi", StringComparison.OrdinalIgnoreCase) ||
+                      type.Equals("Vande Bharat", StringComparison.OrdinalIgnoreCase);
+
+        if (passengerGrid.Columns["Food"] is { } foodCol)
+        {
+            foodCol.Visible = hasFood;
+        }
+    }
+
     private void QuotaRadio_CheckedChanged(object? sender, EventArgs e)
     {
-        if (sender is RadioButton radio)
-        {
-            ApplyQuotaPillStyle(radio);
-        }
-
         if (sender is RadioButton { Checked: false })
         {
             return;
         }
 
         UpdatePassengerRowCount(GetPassengerRowLimit());
-    }
-
-    private static void ApplyQuotaPillStyle(RadioButton radio)
-    {
-        if (radio.Checked)
-        {
-            radio.BackColor = UiTheme.Primary;
-            radio.ForeColor = Color.White;
-            radio.FlatAppearance.BorderColor = UiTheme.Primary;
-        }
-        else
-        {
-            radio.BackColor = UiTheme.PageBg;
-            radio.ForeColor = UiTheme.TextMuted;
-            radio.FlatAppearance.BorderColor = UiTheme.Border;
-        }
+        getFareButton.Visible = quotaTatkalRadio.Checked || quotaPremiumRadio.Checked;
     }
 
     private void UpdatePassengerRowCount(int rowCount)
@@ -318,13 +321,14 @@ public partial class Form1 : Form
             }
         }
         
-        int gridHeight = 28 + (rowCount * 28) + 2; 
-        passengerGrid.Height = gridHeight; 
+        // header=26, row=24 each, +4 for border/padding — no scrollbar
+        int gridHeight = passengerGrid.ColumnHeadersHeight + (rowCount * passengerGrid.RowTemplate.Height) + 4;
+        passengerGrid.Height = gridHeight;
         
         PositionBottomElements();
     }
 
-    private static void PopulateStationCombo(ComboBox comboBox, IReadOnlyList<StationInfo> stations)
+    private static void PopulateStationCombo(FlatComboBox comboBox, IReadOnlyList<StationInfo> stations)
     {
         comboBox.BeginUpdate();
         comboBox.DataSource = null;
@@ -772,6 +776,16 @@ public partial class Form1 : Form
             AvailableClasses = _selectedTrain.Train.AvailableClasses,
             ClassLinkKeys = _selectedTrain.Train.ClassLinkKeys
         };
+
+        var confirmMsg = $"Are you sure you want to book {trainNumber} ({_selectedTrain.Train.TrainName}) " +
+                         $"from {fromCode} to {toCode} on {_lastSearchSettings.TravelDate:dd-MMM-yyyy} " +
+                         $"for {passengers.Count} passenger(s) in {preferredClass}?";
+                         
+        var confirmResult = MessageBox.Show(this, confirmMsg, "Confirm Booking", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (confirmResult != DialogResult.Yes)
+        {
+            return;
+        }
 
         bookIrctcButton.Enabled = false;
         findButton.Enabled = false;

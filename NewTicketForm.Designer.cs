@@ -1,6 +1,6 @@
 namespace train_automation
 {
-    partial class Form1
+    partial class NewTicketForm
     {
         private System.ComponentModel.IContainer components = null;
 
@@ -32,9 +32,9 @@ namespace train_automation
             journeyCard = new Panel();
             journeyHeader = new Label();
             fromCaption = new Label();
-            fromStationCombo = new ComboBox();
+            fromStationCombo = new FlatComboBox();
             toCaption = new Label();
-            toStationCombo = new ComboBox();
+            toStationCombo = new FlatComboBox();
             dateCaption = new Label();
             travelDatePicker = new DateTimePicker();
             findButton = new Button();
@@ -217,7 +217,7 @@ namespace train_automation
             //
             // fromStationCombo
             //
-            fromStationCombo.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+            fromStationCombo.AutoCompleteMode = AutoCompleteMode.Suggest;
             fromStationCombo.AutoCompleteSource = AutoCompleteSource.ListItems;
             fromStationCombo.FormattingEnabled = true;
             fromStationCombo.Location = new Point(16, 60);
@@ -238,7 +238,7 @@ namespace train_automation
             //
             // toStationCombo
             //
-            toStationCombo.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+            toStationCombo.AutoCompleteMode = AutoCompleteMode.Suggest;
             toStationCombo.AutoCompleteSource = AutoCompleteSource.ListItems;
             toStationCombo.FormattingEnabled = true;
             toStationCombo.Location = new Point(200, 60);
@@ -382,74 +382,70 @@ namespace train_automation
             quotaCaption.TabIndex = 17;
             quotaCaption.Text = "QUOTA";
             //
-            // quotaGeneralRadio (pill — active by default)
-            //
+            // quotaGeneralRadio — flat button (selected = accent highlighted)
             quotaGeneralRadio.Appearance = Appearance.Button;
             quotaGeneralRadio.BackColor = primary;
             quotaGeneralRadio.Checked = true;
             quotaGeneralRadio.FlatStyle = FlatStyle.Flat;
-            quotaGeneralRadio.FlatAppearance.BorderSize = 1;
-            quotaGeneralRadio.FlatAppearance.BorderColor = primary;
-            quotaGeneralRadio.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
+            quotaGeneralRadio.FlatAppearance.BorderSize = 0;
+            quotaGeneralRadio.FlatAppearance.CheckedBackColor = primary;
+            quotaGeneralRadio.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
             quotaGeneralRadio.ForeColor = Color.White;
             quotaGeneralRadio.Location = new Point(180, 174);
             quotaGeneralRadio.Name = "quotaGeneralRadio";
-            quotaGeneralRadio.Size = new Size(75, 24);
+            quotaGeneralRadio.Size = new Size(80, 22);
             quotaGeneralRadio.TabIndex = 18;
             quotaGeneralRadio.TabStop = true;
             quotaGeneralRadio.Text = "General";
             quotaGeneralRadio.TextAlign = ContentAlignment.MiddleCenter;
             quotaGeneralRadio.UseVisualStyleBackColor = false;
             quotaGeneralRadio.CheckedChanged += QuotaRadio_CheckedChanged;
-            //
-            // quotaLadiesRadio (pill — inactive)
-            //
+
+            // quotaLadiesRadio — flat button (unselected = dim surface)
             quotaLadiesRadio.Appearance = Appearance.Button;
             quotaLadiesRadio.BackColor = pageBg;
             quotaLadiesRadio.FlatStyle = FlatStyle.Flat;
-            quotaLadiesRadio.FlatAppearance.BorderSize = 1;
-            quotaLadiesRadio.FlatAppearance.BorderColor = borderColor;
-            quotaLadiesRadio.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
+            quotaLadiesRadio.FlatAppearance.BorderSize = 0;
+            quotaLadiesRadio.FlatAppearance.CheckedBackColor = primary;
+            quotaLadiesRadio.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
             quotaLadiesRadio.ForeColor = textMuted;
-            quotaLadiesRadio.Location = new Point(260, 174);
+            quotaLadiesRadio.Location = new Point(264, 174);
             quotaLadiesRadio.Name = "quotaLadiesRadio";
-            quotaLadiesRadio.Size = new Size(75, 24);
+            quotaLadiesRadio.Size = new Size(72, 22);
             quotaLadiesRadio.TabIndex = 19;
             quotaLadiesRadio.Text = "Ladies";
             quotaLadiesRadio.TextAlign = ContentAlignment.MiddleCenter;
             quotaLadiesRadio.UseVisualStyleBackColor = false;
             quotaLadiesRadio.CheckedChanged += QuotaRadio_CheckedChanged;
-            //
-            // quotaTatkalRadio (pill — inactive)
-            //
+
+            // quotaTatkalRadio — flat button (unselected = dim surface)
             quotaTatkalRadio.Appearance = Appearance.Button;
             quotaTatkalRadio.BackColor = pageBg;
             quotaTatkalRadio.FlatStyle = FlatStyle.Flat;
-            quotaTatkalRadio.FlatAppearance.BorderSize = 1;
-            quotaTatkalRadio.FlatAppearance.BorderColor = borderColor;
-            quotaTatkalRadio.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
+            quotaTatkalRadio.FlatAppearance.BorderSize = 0;
+            quotaTatkalRadio.FlatAppearance.CheckedBackColor = primary;
+            quotaTatkalRadio.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
             quotaTatkalRadio.ForeColor = textMuted;
-            quotaTatkalRadio.Location = new Point(180, 202);
+            quotaTatkalRadio.Location = new Point(340, 174);
             quotaTatkalRadio.Name = "quotaTatkalRadio";
-            quotaTatkalRadio.Size = new Size(75, 24);
+            quotaTatkalRadio.Size = new Size(68, 22);
             quotaTatkalRadio.TabIndex = 20;
             quotaTatkalRadio.Text = "Tatkal";
             quotaTatkalRadio.TextAlign = ContentAlignment.MiddleCenter;
             quotaTatkalRadio.UseVisualStyleBackColor = false;
             quotaTatkalRadio.CheckedChanged += QuotaRadio_CheckedChanged;
-            //
-            // quotaPremiumRadio (pill — inactive)
-            //
+
+            // quotaPremiumRadio — flat button (unselected = dim surface)
             quotaPremiumRadio.Appearance = Appearance.Button;
             quotaPremiumRadio.BackColor = pageBg;
             quotaPremiumRadio.FlatStyle = FlatStyle.Flat;
-            quotaPremiumRadio.FlatAppearance.BorderSize = 1;
-            quotaPremiumRadio.FlatAppearance.BorderColor = borderColor;
-            quotaPremiumRadio.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
+            quotaPremiumRadio.FlatAppearance.BorderSize = 0;
+            quotaPremiumRadio.FlatAppearance.CheckedBackColor = primary;
+            quotaPremiumRadio.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
             quotaPremiumRadio.ForeColor = textMuted;
-            quotaPremiumRadio.Location = new Point(260, 202);
+            quotaPremiumRadio.Location = new Point(412, 174);
             quotaPremiumRadio.Name = "quotaPremiumRadio";
-            quotaPremiumRadio.Size = new Size(100, 24);
+            quotaPremiumRadio.Size = new Size(128, 22);
             quotaPremiumRadio.TabIndex = 21;
             quotaPremiumRadio.Text = "Premium Tatkal";
             quotaPremiumRadio.TextAlign = ContentAlignment.MiddleCenter;
@@ -924,22 +920,21 @@ namespace train_automation
             stopButton.UseVisualStyleBackColor = false;
             stopButton.Click += StopButton_Click;
             //
-            // Form1
+            // NewTicketForm
             //
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = pageBg;
             ClientSize = new Size(700, 800);
-            MinimumSize = new Size(700, 600);
             Controls.Add(contentPanel);
             Controls.Add(actionPanel);
             Controls.Add(titlePanel);
-            FormBorderStyle = FormBorderStyle.Sizable;
-            MaximizeBox = true;
-            Name = "Form1";
+            FormBorderStyle = FormBorderStyle.FixedSingle;
+            MaximizeBox = false;
+            Name = "NewTicketForm";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "New Ticket";
-            Load += Form1_Load;
+            Load += NewTicketForm_Load;
             titlePanel.ResumeLayout(false);
             titlePanel.PerformLayout();
             contentPanel.ResumeLayout(false);
@@ -965,9 +960,9 @@ namespace train_automation
         private Panel journeyCard;
         private Label journeyHeader;
         private Label fromCaption;
-        private ComboBox fromStationCombo;
+        private FlatComboBox fromStationCombo;
         private Label toCaption;
-        private ComboBox toStationCombo;
+        private FlatComboBox toStationCombo;
         private Label dateCaption;
         private DateTimePicker travelDatePicker;
         private Button findButton;

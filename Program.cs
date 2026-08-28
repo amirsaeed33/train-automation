@@ -11,12 +11,7 @@ internal static class Program
             return;
         }
 
-        if (args.Contains("ghumo-test"))
-        {
-            try { GhumoScraperTest.TestAsync("NDLS", "HWH", DateTime.Today.AddDays(5).ToString("yyyy-MM-dd")).GetAwaiter().GetResult(); }
-            catch (Exception ex) { System.IO.File.WriteAllText("D:\\github\\train-automation-desktop\\ghumo_test_output.txt", ex.ToString()); }
-            return;
-        }
+
 
         ApplicationConfiguration.Initialize();
         Application.Run(new MainShellForm());

@@ -1,247 +1,172 @@
 namespace train_automation;
 
 /// <summary>
-/// Launcher page matching the Stitch Main Launcher:
-/// 4x2 action cards, then Target Environment + Global Settings side by side.
+/// Launcher page — Hitman-style compact layout:
+/// 2 rows of action buttons, then two rows of inline checkboxes.
 /// </summary>
 public sealed class LauncherPanel : UserControl
 {
-    private readonly Panel _canvas = new();
-
     public event EventHandler<string>? NavigateRequested;
 
     public LauncherPanel()
     {
-        Dock = DockStyle.Fill;
+        Dock      = DockStyle.Fill;
         BackColor = UiTheme.PageBg;
-        AutoScroll = true;
 
-        _canvas.Location = new Point(12, 12);
-        _canvas.Size = new Size(820, 520);
-        Controls.Add(_canvas);
-
-        Rebuild(820);
-        Resize += (_, _) =>
-        {
-            var w = Math.Clamp(ClientSize.Width - 24, 600, 980);
-            if (Math.Abs(_canvas.Width - w) > 8)
-            {
-                Rebuild(w);
-            }
-        };
+        BuildLayout();
     }
 
-    private void Rebuild(int width)
+    private void BuildLayout()
     {
-        _canvas.SuspendLayout();
-        _canvas.Controls.Clear();
-        _canvas.Width = width;
+        SuspendLayout();
 
-        var actions = BuildActionGrid(width);
-        actions.Location = new Point(0, 0);
-        _canvas.Controls.Add(actions);
-
-        var envCard = BuildEnvironmentCard((width / 2) - 8);
-        envCard.Location = new Point(0, actions.Bottom + 16);
-        _canvas.Controls.Add(envCard);
-
-        var globalCard = BuildGlobalSettingsCard((width / 2) - 8);
-        globalCard.Location = new Point(envCard.Right + 16, actions.Bottom + 16);
-        
-        var cardH = Math.Max(envCard.Height, globalCard.Height);
-        envCard.Height = cardH;
-        globalCard.Height = cardH;
-        _canvas.Controls.Add(globalCard);
-
-        _canvas.Height = Math.Max(envCard.Bottom, globalCard.Bottom) + 8;
-        _canvas.ResumeLayout();
-    }
-
-    private Panel BuildActionGrid(int width)
-    {
-        const int cols = 4;
-        const int rows = 2;
-        const int gap = 8;
-        const int cardH = 44;
-        var cardW = (width - (gap * (cols - 1))) / cols;
-
-        var host = new Panel
+        // ── 4×2 Action button grid ────────────────────────────────────────
+        var actions = new TableLayoutPanel
         {
-            Size = new Size(width, (cardH * rows) + (gap * (rows - 1)))
+            ColumnCount = 4,
+            RowCount    = 2,
+            Dock        = DockStyle.Top,
+            Height      = 96,
+            BackColor   = UiTheme.PageBg,
+            Padding     = new Padding(8, 8, 8, 4),
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
         };
+        for (var i = 0; i < 4; i++) actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        for (var i = 0; i < 2; i++) actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
 
-        var items = new (string Line1, string Page, bool Primary)[]
+        var items = new (string Label, string Page, bool Primary)[]
         {
-            ("Add IRCTC Account", "accounts", false),
-            ("New Ticket", "new-ticket", true),
-            ("Open Tickets", "tickets", false),
-            ("History and Logs", "logs", false),
-            ("Add Bank / UPI", "", false),
-            ("OTP Bypass Settings", "", false),
-            ("Backup and Restore", "", false),
-            ("IP / Block Check", "", false)
+            ("Add IRCTC Account", "accounts",   false),
+            ("New Ticket",        "new-ticket", true ),
+            ("Open Tickets",      "tickets",    false),
+            ("History & Logs",    "logs",       false),
+            ("Add Bank / UPI",    "",           false),
+            ("OTP Bypass",        "",           false),
+            ("IP Block Check",    "",           false),
         };
 
         for (var i = 0; i < items.Length; i++)
         {
             var item = items[i];
-            var col = i % cols;
-            var row = i / cols;
-            var btn = new Button
-            {
-                Location = new Point(col * (cardW + gap), row * (cardH + gap)),
-                Size = new Size(cardW, cardH),
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Cursor = Cursors.Hand,
-                TextAlign = ContentAlignment.MiddleCenter,
-                UseMnemonic = false,
-                Text = item.Line1
-            };
-            btn.FlatAppearance.BorderSize = 1;
-
-            if (item.Primary)
-            {
-                btn.BackColor = UiTheme.Primary;
-                btn.ForeColor = Color.White;
-                btn.FlatAppearance.BorderColor = UiTheme.Primary;
-            }
-            else
-            {
-                btn.BackColor = UiTheme.SurfaceLowest;
-                btn.ForeColor = UiTheme.Text;
-                btn.FlatAppearance.BorderColor = UiTheme.OutlineVariant;
-            }
-
+            var btn  = MakeActionButton(item.Label, item.Primary);
             var page = item.Page;
-            var label = item.Line1;
-            btn.Click += (_, _) => OnActionClick(page, label);
-            host.Controls.Add(btn);
+            var lbl  = item.Label;
+            btn.Margin = new Padding(3, 3, 3, 3);
+            btn.Click += (_, _) => OnActionClick(page, lbl);
+            actions.Controls.Add(btn, i % 4, i / 4);
+        }
+        Controls.Add(actions);
+
+        // ── Divider ──────────────────────────────────────────────────────
+        Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = UiTheme.OutlineVariant });
+
+        // ── Checkbox row 1 ────────────────────────────────────────────────
+        var betaCheck    = new CheckBox { Text = "Beta UI",         Checked = true  };
+        var chromeCheck  = new CheckBox { Text = "Real Chrome (CDP)", Checked = true };
+        var confirmCheck = new CheckBox { Text = "Confirm Berths",  Checked = false };
+
+        var resetBtn = new Button
+        {
+            Text      = "Reset",
+            Size      = new Size(56, 22),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = UiTheme.Danger,
+            ForeColor = Color.White,
+            Font      = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            Margin    = new Padding(12, 0, 0, 0)
+        };
+        resetBtn.FlatAppearance.BorderSize = 0;
+        resetBtn.Click += (_, _) =>
+        {
+            betaCheck.Checked = false;
+            chromeCheck.Checked = false;
+            confirmCheck.Checked = false;
+        };
+
+        Controls.Add(BuildCheckRow(betaCheck, chromeCheck, confirmCheck, resetBtn));
+
+        // ── Checkbox row 2 ────────────────────────────────────────────────
+        var altAvailCheck    = new CheckBox { Text = "Alternate Avail", Checked = false };
+        var directLoginCheck = new CheckBox { Text = "Direct Login",    Checked = false };
+
+        Controls.Add(BuildCheckRow(altAvailCheck, directLoginCheck));
+
+        // Bring to front so DockStyle.Top stacks correctly
+        foreach (Control c in Controls) c.BringToFront();
+
+        ResumeLayout();
+    }
+
+    private static FlowLayoutPanel BuildCheckRow(params Control[] controls)
+    {
+        var row = new FlowLayoutPanel
+        {
+            Dock          = DockStyle.Top,
+            Height        = 26,
+            BackColor     = UiTheme.PageBg,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents  = false,
+            Padding       = new Padding(10, 4, 0, 0)
+        };
+
+        foreach (var ctrl in controls)
+        {
+            if (ctrl is CheckBox cb) StyleCheckbox(cb);
+            row.Controls.Add(ctrl);
         }
 
-        return host;
+        return row;
+    }
+
+    private static Button MakeActionButton(string label, bool primary)
+    {
+        var btn = new Button
+        {
+            Text        = label,
+            Dock        = DockStyle.Fill,
+            FlatStyle   = FlatStyle.Flat,
+            Font        = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            Cursor      = Cursors.Hand,
+            TextAlign   = ContentAlignment.MiddleCenter,
+            UseMnemonic = false
+        };
+        btn.FlatAppearance.BorderSize = 1;
+
+        if (primary)
+        {
+            btn.BackColor = UiTheme.Primary;
+            btn.ForeColor = Color.White;
+            btn.FlatAppearance.BorderColor = UiTheme.Primary;
+        }
+        else
+        {
+            btn.BackColor = UiTheme.SurfaceLowest;
+            btn.ForeColor = UiTheme.Text;
+            btn.FlatAppearance.BorderColor = UiTheme.OutlineVariant;
+        }
+
+        return btn;
+    }
+
+    private static void StyleCheckbox(CheckBox cb)
+    {
+        cb.BackColor = UiTheme.PageBg;
+        cb.ForeColor = Color.White;
+        cb.Font      = new Font("Segoe UI", 8.5F);
+        cb.AutoSize  = true;
+        cb.Margin    = new Padding(0, 0, 16, 0);
+        cb.UseVisualStyleBackColor = false;
     }
 
     private void OnActionClick(string page, string label)
     {
-        if (string.IsNullOrEmpty(page))
+        if (string.IsNullOrEmpty(page) || page == "logs")
         {
             MessageBox.Show(FindForm(), $"{label} will be added next.", "RailBot Pro",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        if (page == "logs")
-        {
-            MessageBox.Show(FindForm(), "Logs screen will be wired next.", "RailBot Pro",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
         NavigateRequested?.Invoke(this, page);
-    }
-
-    private static Panel BuildEnvironmentCard(int width)
-    {
-        var items = new (string Label, bool On)[]
-        {
-            ("Chrome", true), ("Edge", false),
-            ("Opera", true), ("Brave", false),
-            ("Mobile App 1", false), ("Mobile App 2", false)
-        };
-
-        return BuildToggleCard("TARGET ENVIRONMENT", width, items, columns: 2);
-    }
-
-    private static Panel BuildGlobalSettingsCard(int width)
-    {
-        var items = new (string Label, bool On)[]
-        {
-            ("Beta Booking Flow", false),
-            ("Check Alternate Availability", true),
-            ("Screen Recording Mode", false),
-            ("Direct Login (skip OTP)", true)
-        };
-
-        return BuildToggleCard("GLOBAL SETTINGS", width, items, columns: 1);
-    }
-
-    private static Panel BuildToggleCard(string title, int width, (string Label, bool On)[] items, int columns)
-    {
-        const int pad = 14;
-        const int gap = 8;
-        const int rowH = 42;
-        const int headerH = 28;
-
-        var rows = (int)Math.Ceiling(items.Length / (double)columns);
-        var height = pad + headerH + (rows * rowH) + ((rows - 1) * gap) + pad;
-
-        var card = new Panel
-        {
-            Size = new Size(width, height),
-            BackColor = UiTheme.SurfaceLowest,
-            BorderStyle = BorderStyle.FixedSingle
-        };
-
-        var header = new Label
-        {
-            Text = title,
-            Font = UiTheme.LabelSm,
-            ForeColor = UiTheme.TextMuted,
-            AutoSize = true,
-            Location = new Point(pad, 12)
-        };
-        card.Controls.Add(header);
-
-        var innerW = width - (pad * 2);
-        var cellW = columns == 1
-            ? innerW
-            : (innerW - gap) / 2;
-
-        for (var i = 0; i < items.Length; i++)
-        {
-            var col = i % columns;
-            var row = i / columns;
-            var x = pad + (col * (cellW + gap));
-            var y = pad + headerH + (row * (rowH + gap));
-            card.Controls.Add(CreateToggleCell(items[i].Label, items[i].On, x, y, cellW, rowH));
-        }
-
-        return card;
-    }
-
-    private static Panel CreateToggleCell(string label, bool on, int x, int y, int width, int height)
-    {
-        var cell = new Panel
-        {
-            Location = new Point(x, y),
-            Size = new Size(width, height),
-            BackColor = UiTheme.SurfaceContainer,
-            BorderStyle = BorderStyle.FixedSingle
-        };
-
-        var toggle = new ToggleSwitch
-        {
-            Checked = on,
-            Size = new Size(38, 20),
-            Location = new Point(width - 38 - 10, (height - 20) / 2)
-        };
-
-        var text = new Label
-        {
-            Text = label,
-            Font = UiTheme.LabelMd,
-            ForeColor = UiTheme.Text,
-            AutoSize = false,
-            AutoEllipsis = true,
-            UseMnemonic = false,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Location = new Point(10, 0),
-            Size = new Size(Math.Max(40, toggle.Left - 18), height)
-        };
-
-        cell.Controls.Add(text);
-        cell.Controls.Add(toggle);
-        return cell;
     }
 }
