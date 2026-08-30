@@ -100,23 +100,23 @@ public partial class NewTicketForm
         _confirmBerthsNative.CheckedChanged += (_, _) => confirmBerthsCheck.Checked = _confirmBerthsNative.Checked;
 
         int y = (int)(6 * scale);
-        int rowH = (int)(24 * scale); // strict vertical spacing
+        int rowH = (int)(23 * scale); // strict vertical spacing
 
         // ── ROW 1 ──────────────────────────
         fromCaption.Location = new Point((int)(12 * scale), y + (int)(4 * scale));
-        fromStationCombo.Location = new Point((int)(60 * scale), y);
-        fromStationCombo.Size = new Size((int)(140 * scale), (int)(24 * scale));
+        fromStationCombo.Location = new Point((int)(55 * scale), y);
+        fromStationCombo.Size = new Size((int)(135 * scale), (int)(24 * scale));
 
-        toCaption.Location = new Point((int)(210 * scale), y + (int)(4 * scale));
-        toStationCombo.Location = new Point((int)(235 * scale), y);
-        toStationCombo.Size = new Size((int)(140 * scale), (int)(24 * scale));
+        toCaption.Location = new Point((int)(195 * scale), y + (int)(4 * scale));
+        toStationCombo.Location = new Point((int)(220 * scale), y);
+        toStationCombo.Size = new Size((int)(135 * scale), (int)(24 * scale));
 
-        dateCaption.Location = new Point((int)(385 * scale), y + (int)(4 * scale));
-        travelDatePicker.Location = new Point((int)(420 * scale), y);
-        travelDatePicker.Size = new Size((int)(100 * scale), (int)(24 * scale));
+        dateCaption.Location = new Point((int)(365 * scale), y + (int)(4 * scale));
+        travelDatePicker.Location = new Point((int)(400 * scale), y);
+        travelDatePicker.Size = new Size((int)(95 * scale), (int)(24 * scale));
 
-        findButton.Location = new Point((int)(530 * scale), y);
-        findButton.Size = new Size((int)(80 * scale), (int)(24 * scale));
+        findButton.Location = new Point((int)(505 * scale), y);
+        findButton.Size = new Size((int)(90 * scale), (int)(24 * scale));
         findButton.FlatStyle = FlatStyle.Flat;
         findButton.BackColor = UiTheme.Primary;
         findButton.ForeColor = Color.White;
@@ -126,18 +126,18 @@ public partial class NewTicketForm
 
         // ── ROW 2 ──────────────────────────
         bdgCaption.Location = new Point((int)(12 * scale), y + (int)(4 * scale));
-        boardingPointText.Location = new Point((int)(60 * scale), y);
-        boardingPointText.Size = new Size((int)(140 * scale), (int)(24 * scale));
+        boardingPointText.Location = new Point((int)(55 * scale), y);
+        boardingPointText.Size = new Size((int)(135 * scale), (int)(24 * scale));
 
-        trainNoCaption.Location = new Point((int)(210 * scale), y + (int)(4 * scale));
-        trainNoText.Location = new Point((int)(265 * scale), y);
-        trainNoText.Size = new Size((int)(90 * scale), (int)(24 * scale));
+        trainNoCaption.Location = new Point((int)(195 * scale), y + (int)(4 * scale));
+        trainNoText.Location = new Point((int)(250 * scale), y);
+        trainNoText.Size = new Size((int)(80 * scale), (int)(24 * scale));
 
-        trainTypeCaption.Location = new Point((int)(365 * scale), y + (int)(4 * scale));
-        trainTypeCombo.Location = new Point((int)(430 * scale), y);
+        trainTypeCaption.Location = new Point((int)(335 * scale), y + (int)(4 * scale));
+        trainTypeCombo.Location = new Point((int)(400 * scale), y);
         trainTypeCombo.Size = new Size((int)(95 * scale), (int)(24 * scale));
 
-        availabilityLink.Location = new Point((int)(535 * scale), y + (int)(4 * scale));
+        availabilityLink.Location = new Point((int)(505 * scale), y + (int)(4 * scale));
 
         y += rowH;
 
@@ -148,20 +148,20 @@ public partial class NewTicketForm
             contentPanel.Controls.Add(_quotaStrip);
         }
         _quotaStrip.Location = new Point(0, y);
-        _quotaStrip.Size = new Size((int)(665 * scale), (int)(30 * scale));
+        _quotaStrip.Size = new Size((int)(610 * scale), (int)(30 * scale));
         _quotaStrip.BringToFront();
 
         classCaption.Location = new Point((int)(12 * scale), (int)(8 * scale));
-        classCombo.Location = new Point((int)(60 * scale), (int)(4 * scale));
-        classCombo.Size = new Size((int)(140 * scale), (int)(24 * scale));
+        classCombo.Location = new Point((int)(55 * scale), (int)(4 * scale));
+        classCombo.Size = new Size((int)(135 * scale), (int)(24 * scale));
         _quotaStrip.Controls.Add(classCaption);
         _quotaStrip.Controls.Add(classCombo);
         
-        quotaCaption.Location = new Point((int)(210 * scale), (int)(8 * scale));
+        quotaCaption.Location = new Point((int)(195 * scale), (int)(8 * scale));
         _quotaStrip.Controls.Add(quotaCaption);
         
         var radios = new[] { quotaGeneralRadio, quotaLadiesRadio, quotaTatkalRadio, quotaPremiumRadio };
-        int[] rx = { (int)(265 * scale), (int)(340 * scale), (int)(410 * scale), (int)(480 * scale) };
+        int[] rx = { (int)(240 * scale), (int)(310 * scale), (int)(375 * scale), (int)(440 * scale) };
         for (int i = 0; i < radios.Length; i++)
         {
             var r = radios[i];
@@ -178,10 +178,10 @@ public partial class NewTicketForm
             _quotaStrip.Controls.Add(r);
         }
 
-        y += (int)(32 * scale);
+        y += (int)(30 * scale);
 
         // ── PASSENGER TABLE ──────────────────────────
-        int w = (int)(665 * scale);
+        int w = (int)(610 * scale);
         
         passengerGrid.Visible = false;
 
@@ -203,20 +203,20 @@ public partial class NewTicketForm
         passengerCustomGridPanel.Width = formWidth - (int)(24 * scale);
 
         int[] w = { 
-            (int)(35 * scale),  // SNo
-            (int)(110 * scale), // Name
-            (int)(35 * scale),  // Age
-            (int)(50 * scale),  // Sex
-            (int)(75 * scale),  // Berth
-            (int)(70 * scale),  // Food
+            (int)(30 * scale),  // SNo
+            (int)(95 * scale),  // Name
+            (int)(30 * scale),  // Age
+            (int)(45 * scale),  // Sex
+            (int)(65 * scale),  // Berth
+            (int)(60 * scale),  // Food
             (int)(65 * scale),  // Nationality
-            (int)(65 * scale),  // Passport
+            (int)(55 * scale),  // Passport
             (int)(30 * scale),  // Child
             (int)(30 * scale),  // Senior
             (int)(30 * scale)   // Bed
         };
 
-        string[] headers = { "SNo", "Name", "Age", "Sex", "Berth", "Food", "Nationality", "Passport", "Child", "Senior", "Bed" };
+        string[] headers = { "SNo", "Name", "Age", "Sex", "Berth", "Food", "Nation", "Passport", "Chld", "Snr", "Bed" };
         
         passengerCustomGridPanel.Controls.Clear();
         _passengerRows.Clear();
@@ -232,7 +232,7 @@ public partial class NewTicketForm
                 Text = headers[i],
                 Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
                 Location = new Point(currentX, currentY),
-                Size = new Size(w[i], (int)(20 * scale)),
+                Size = new Size(w[i], (int)(18 * scale)),
                 ForeColor = UiTheme.Text,
                 TextAlign = ContentAlignment.BottomLeft
             };
@@ -242,7 +242,7 @@ public partial class NewTicketForm
             currentX += w[i] + (int)(4 * scale);
         }
 
-        currentY += (int)(20 * scale);
+        currentY += (int)(18 * scale);
 
         // Separator
         Panel sep = new Panel
@@ -252,7 +252,7 @@ public partial class NewTicketForm
             BackColor = UiTheme.OutlineVariant
         };
         passengerCustomGridPanel.Controls.Add(sep);
-        currentY += (int)(6 * scale);
+        currentY += (int)(4 * scale);
 
         // 6 Data Rows
         for (int r = 1; r <= 6; r++)
@@ -261,27 +261,27 @@ public partial class NewTicketForm
             var rowControls = new PassengerRowControls();
 
             // 0: SNo
-            Label sno = new Label { Text = r.ToString(), Font = new Font("Segoe UI", 7.5F, FontStyle.Bold), Location = new Point(currentX, currentY + (int)(4 * scale)), Size = new Size(w[0], (int)(20 * scale)), TextAlign = ContentAlignment.TopCenter, ForeColor = UiTheme.Text };
+            Label sno = new Label { Text = r.ToString(), Font = new Font("Segoe UI", 7.5F, FontStyle.Bold), Location = new Point(currentX, currentY + (int)(4 * scale)), Size = new Size(w[0], (int)(18 * scale)), TextAlign = ContentAlignment.TopCenter, ForeColor = UiTheme.Text };
             passengerCustomGridPanel.Controls.Add(sno);
             rowControls.SNo = sno;
             currentX += w[0] + (int)(4 * scale);
 
             // 1: Name
-            TextBox name = new TextBox { Location = new Point(currentX, currentY), Size = new Size(w[1], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            TextBox name = new TextBox { Location = new Point(currentX, currentY), Size = new Size(w[1], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             name.TextChanged += (_, _) => SaveIrctcConfigFromUi();
             passengerCustomGridPanel.Controls.Add(name);
             rowControls.Name = name;
             currentX += w[1] + (int)(4 * scale);
 
             // 2: Age
-            TextBox age = new TextBox { Location = new Point(currentX, currentY), Size = new Size(w[2], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            TextBox age = new TextBox { Location = new Point(currentX, currentY), Size = new Size(w[2], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             age.TextChanged += (_, _) => SaveIrctcConfigFromUi();
             passengerCustomGridPanel.Controls.Add(age);
             rowControls.Age = age;
             currentX += w[2] + (int)(4 * scale);
 
             // 3: Sex
-            ComboBox sex = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[3], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            ComboBox sex = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[3], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             sex.Items.AddRange(new object[] { "Select", "M", "F", "T" });
             sex.SelectedIndex = 0;
             sex.SelectedIndexChanged += (_, _) => SaveIrctcConfigFromUi();
@@ -290,7 +290,7 @@ public partial class NewTicketForm
             currentX += w[3] + (int)(4 * scale);
 
             // 4: Berth
-            ComboBox berth = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[4], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            ComboBox berth = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[4], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             berth.Items.AddRange(new object[] { "No Choice", "Lower", "Middle", "Upper", "Side Lower", "Side Upper" });
             berth.SelectedIndex = 0;
             berth.SelectedIndexChanged += (_, _) => SaveIrctcConfigFromUi();
@@ -299,7 +299,7 @@ public partial class NewTicketForm
             currentX += w[4] + (int)(4 * scale);
 
             // 5: Food
-            ComboBox food = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[5], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            ComboBox food = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[5], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             food.Items.AddRange(new object[] { "No Choice", "Veg", "Non Veg" });
             food.SelectedIndex = 0;
             food.SelectedIndexChanged += (_, _) => SaveIrctcConfigFromUi();
@@ -308,7 +308,7 @@ public partial class NewTicketForm
             currentX += w[5] + (int)(4 * scale);
 
             // 6: Nationality
-            ComboBox nat = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[6], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            ComboBox nat = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(currentX, currentY), Size = new Size(w[6], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             nat.Items.AddRange(new object[] { "India-IN", "Other" });
             nat.SelectedIndex = 0;
             nat.SelectedIndexChanged += (_, _) => SaveIrctcConfigFromUi();
@@ -317,32 +317,32 @@ public partial class NewTicketForm
             currentX += w[6] + (int)(4 * scale);
 
             // 7: Passport
-            TextBox pass = new TextBox { Location = new Point(currentX, currentY), Size = new Size(w[7], (int)(20 * scale)), Font = new Font("Segoe UI", 7.5F) };
+            TextBox pass = new TextBox { Location = new Point(currentX, currentY), Size = new Size(w[7], (int)(18 * scale)), Font = new Font("Segoe UI", 7.5F) };
             pass.TextChanged += (_, _) => SaveIrctcConfigFromUi();
             passengerCustomGridPanel.Controls.Add(pass);
             rowControls.Passport = pass;
             currentX += w[7] + (int)(4 * scale);
 
             // Checkboxes
-            CheckBox child = new CheckBox { Location = new Point(currentX + (w[8]/2) - (int)(6 * scale), currentY + (int)(3 * scale)), Size = new Size((int)(15 * scale), (int)(15 * scale)) };
+            CheckBox child = new CheckBox { Location = new Point(currentX + (w[8]/2) - (int)(6 * scale), currentY + (int)(2 * scale)), Size = new Size((int)(14 * scale), (int)(14 * scale)) };
             child.CheckedChanged += (_, _) => SaveIrctcConfigFromUi();
             passengerCustomGridPanel.Controls.Add(child);
             rowControls.Child = child;
             currentX += w[8] + (int)(4 * scale);
 
-            CheckBox senior = new CheckBox { Location = new Point(currentX + (w[9]/2) - (int)(6 * scale), currentY + (int)(3 * scale)), Size = new Size((int)(15 * scale), (int)(15 * scale)) };
+            CheckBox senior = new CheckBox { Location = new Point(currentX + (w[9]/2) - (int)(6 * scale), currentY + (int)(2 * scale)), Size = new Size((int)(14 * scale), (int)(14 * scale)) };
             senior.CheckedChanged += (_, _) => SaveIrctcConfigFromUi();
             passengerCustomGridPanel.Controls.Add(senior);
             rowControls.Senior = senior;
             currentX += w[9] + (int)(4 * scale);
 
-            CheckBox bed = new CheckBox { Location = new Point(currentX + (w[10]/2) - (int)(6 * scale), currentY + (int)(3 * scale)), Size = new Size((int)(15 * scale), (int)(15 * scale)) };
+            CheckBox bed = new CheckBox { Location = new Point(currentX + (w[10]/2) - (int)(6 * scale), currentY + (int)(2 * scale)), Size = new Size((int)(14 * scale), (int)(14 * scale)) };
             bed.CheckedChanged += (_, _) => SaveIrctcConfigFromUi();
             passengerCustomGridPanel.Controls.Add(bed);
             rowControls.Bed = bed;
 
             _passengerRows.Add(rowControls);
-            currentY += (int)(24 * scale);
+            currentY += (int)(22 * scale);
         }
 
         passengerCustomGridPanel.Height = currentY;
@@ -353,7 +353,7 @@ public partial class NewTicketForm
     {
         if (_autoUpgradeNative == null) return; 
 
-        int rowH = (int)(26 * scale);
+        int rowH = (int)(24 * scale);
 
         int c1 = (int)(12 * scale);
         int c2 = (int)(w * 0.38);
@@ -379,7 +379,7 @@ public partial class NewTicketForm
             getFareButton.BringToFront();
         }
 
-        y += (int)(30 * scale);
+        y += (int)(24 * scale);
 
         // ── BOTTOM STRIP (Settings & Payment) ──────────────────────────────────
         if (_bottomStrip == null)
@@ -391,23 +391,27 @@ public partial class NewTicketForm
         _bottomStrip.Width = w;
         _bottomStrip.BringToFront();
 
-        int sy = (int)(6 * scale); 
+        int sy = (int)(4 * scale); 
 
         // ── ROW 5: Ticket Slot | Getways | Prior Bank ────────────────
+        int off1 = (int)(60 * scale);
+        int off2 = (int)(65 * scale);
+        int off3 = (int)(75 * scale);
+
         ticketSlotCaption.Location = new Point(c1, sy + 4);
-        ticketSlotCombo.Location = new Point(ticketSlotCaption.Right + 5, sy);
+        ticketSlotCombo.Location = new Point(c1 + off1, sy);
         ticketSlotCombo.Size = new Size(c2 - ticketSlotCombo.Left - 15, 24);
         _bottomStrip.Controls.Add(ticketSlotCaption);
         _bottomStrip.Controls.Add(ticketSlotCombo);
 
         gatewayCaption.Location = new Point(c2, sy + 4);
-        gatewayCombo.Location = new Point(gatewayCaption.Right + 5, sy);
+        gatewayCombo.Location = new Point(c2 + off2, sy);
         gatewayCombo.Size = new Size(c3 - gatewayCombo.Left - 15, 24);
         _bottomStrip.Controls.Add(gatewayCaption);
         _bottomStrip.Controls.Add(gatewayCombo);
 
         priorBankCaption.Location = new Point(c3, sy + 4);
-        priorBankCombo.Location = new Point(priorBankCaption.Right + 5, sy);
+        priorBankCombo.Location = new Point(c3 + off3, sy);
         priorBankCombo.Size = new Size(w - priorBankCombo.Left - 15, 24);
         _bottomStrip.Controls.Add(priorBankCaption);
         _bottomStrip.Controls.Add(priorBankCombo);
@@ -419,13 +423,13 @@ public partial class NewTicketForm
         _bottomStrip.Controls.Add(_autoUpgradeNative);
         
         ticketNameCaption.Location = new Point(c2, sy + 4);
-        ticketNameText.Location = new Point(ticketNameCaption.Right + 5, sy);
+        ticketNameText.Location = new Point(c2 + off2, sy);
         ticketNameText.Size = new Size(c3 - ticketNameText.Left - 15, 24);
         _bottomStrip.Controls.Add(ticketNameCaption);
         _bottomStrip.Controls.Add(ticketNameText);
 
         backupBankCaption.Location = new Point(c3, sy + 4);
-        backupBankCombo.Location = new Point(backupBankCaption.Right + 5, sy);
+        backupBankCombo.Location = new Point(c3 + off3, sy);
         backupBankCombo.Size = new Size(w - backupBankCombo.Left - 15, 24);
         _bottomStrip.Controls.Add(backupBankCaption);
         _bottomStrip.Controls.Add(backupBankCombo);
@@ -437,15 +441,15 @@ public partial class NewTicketForm
         _bottomStrip.Controls.Add(_confirmBerthsNative);
 
         userCaption.Location = new Point(c2, sy + 4);
-        irctcUserCombo.Location = new Point(userCaption.Right + 5, sy);
+        irctcUserCombo.Location = new Point(c2 + off2, sy);
         irctcUserCombo.Size = new Size(c3 - irctcUserCombo.Left - 15, 24);
         _bottomStrip.Controls.Add(userCaption);
         _bottomStrip.Controls.Add(irctcUserCombo);
 
-        sy += rowH + (int)(6 * scale);
+        sy += rowH + (int)(4 * scale);
         _bottomStrip.Height = sy;
 
-        y = _bottomStrip.Bottom + (int)(4 * scale);
+        y = _bottomStrip.Bottom + (int)(2 * scale);
 
         // ── STATUS BAR & BUTTONS ─────────────────────────────────────────
         if (actionPanel != null)
@@ -463,10 +467,10 @@ public partial class NewTicketForm
         actionSeparator.Size = new Size(w, 1);
         actionSeparator.BackColor = UiTheme.OutlineVariant;
 
-        statusDotLabel.Location = new Point(c1, y + 7);
+        statusDotLabel.Location = new Point(c1, y + 10);
         statusDotLabel.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
 
-        statusLabel.Location = new Point(statusDotLabel.Right + 5, y + 5);
+        statusLabel.Location = new Point(statusDotLabel.Right + 5, y + 9);
         statusLabel.Font = new Font("Segoe UI", 7.5F);
         statusLabel.ForeColor = UiTheme.TextMuted;
         statusLabel.AutoSize = true;
@@ -518,7 +522,7 @@ public partial class NewTicketForm
         contentPanel.Controls.Add(saveButton);
         saveButton.BringToFront();
 
-        y += (int)(40 * scale);
+        y += (int)(36 * scale);
 
         this.ClientSize = new Size(w, y + 6);
     }

@@ -9,6 +9,8 @@ public sealed class BookingConfiguration
 {
     public IrctcCredentials Credentials { get; set; } = new();
     public List<IrctcCredentials> SavedAccounts { get; set; } = new();
+    public List<BankDetails> SavedBanks { get; set; } = new();
+    public List<CardDetails> SavedCards { get; set; } = new();
     public List<Passenger> Passengers { get; set; } = new();
 
     /// <summary>Preferred coach class code, e.g. SL, 3A, 2A, CC, 2S.</summary>
@@ -88,6 +90,20 @@ public sealed class BookingConfiguration
                         foreach (var acc in config.SavedAccounts)
                             acc.Password = CredentialProtector.Unprotect(acc.Password);
                     }
+                    if (config.SavedBanks != null)
+                    {
+                        foreach (var bank in config.SavedBanks)
+                            bank.Password = CredentialProtector.Unprotect(bank.Password);
+                    }
+                    if (config.SavedCards != null)
+                    {
+                        foreach (var card in config.SavedCards)
+                        {
+                            card.Pin = CredentialProtector.Unprotect(card.Pin);
+                            card.Cvv = CredentialProtector.Unprotect(card.Cvv);
+                            card.ThreeDPassword = CredentialProtector.Unprotect(card.ThreeDPassword);
+                        }
+                    }
                     return config;
                 }
             }
@@ -115,6 +131,29 @@ public sealed class BookingConfiguration
                 {
                     Username = a.Username,
                     Password = CredentialProtector.Protect(a.Password)
+                }).ToList(),
+                SavedBanks = SavedBanks.Select(b => new BankDetails
+                {
+                    Gateway = b.Gateway,
+                    BankName = b.BankName,
+                    UserName = b.UserName,
+                    Password = CredentialProtector.Protect(b.Password),
+                    NameToSave = b.NameToSave
+                }).ToList(),
+                SavedCards = SavedCards.Select(c => new CardDetails
+                {
+                    CardCategory = c.CardCategory,
+                    Gateway = c.Gateway,
+                    BankName = c.BankName,
+                    CardType = c.CardType,
+                    CardNumber = c.CardNumber,
+                    ExpiryMonth = c.ExpiryMonth,
+                    ExpiryYear = c.ExpiryYear,
+                    NameOnCard = c.NameOnCard,
+                    Pin = CredentialProtector.Protect(c.Pin),
+                    Cvv = CredentialProtector.Protect(c.Cvv),
+                    ThreeDPassword = CredentialProtector.Protect(c.ThreeDPassword),
+                    NameToSave = c.NameToSave
                 }).ToList(),
                 Passengers = Passengers.Select(p => new Passenger
                 {

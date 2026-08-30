@@ -40,7 +40,7 @@ public sealed class LauncherPanel : UserControl
             ("New Ticket",        "new-ticket", true ),
             ("Open Tickets",      "tickets",    false),
             ("History & Logs",    "logs",       false),
-            ("Add Bank / UPI",    "",           false),
+            ("Add Bank / UPI",    "bank",       false),
             ("OTP Bypass",        "",           false),
             ("IP Block Check",    "",           false),
         };

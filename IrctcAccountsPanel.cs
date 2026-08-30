@@ -6,7 +6,7 @@ public sealed class IrctcAccountsPanel : UserControl
     private const int BASE_H  = 112;
     private const int MAX_H   = 390;
 
-    private readonly DataGridView _grid = new();
+    private readonly Panel _accountsContainer = new();
     private readonly Label _countLabel = new();
 
     public IrctcAccountsPanel()
@@ -35,9 +35,10 @@ public sealed class IrctcAccountsPanel : UserControl
         card.Location = new Point(12, 40);
         card.Anchor   = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
 
-        ConfigureGrid();
-        _grid.Dock = DockStyle.Fill;
-        card.Controls.Add(_grid);
+        _accountsContainer.Dock = DockStyle.Fill;
+        _accountsContainer.AutoScroll = true;
+        _accountsContainer.BackColor = UiTheme.PageBg;
+        card.Controls.Add(_accountsContainer);
 
         // ── Slim footer ──────────────────────────────────────────────────────
         var footer = new Panel
@@ -64,7 +65,7 @@ public sealed class IrctcAccountsPanel : UserControl
 
     private void ReloadFromConfig()
     {
-        _grid.Rows.Clear();
+        _accountsContainer.Controls.Clear();
         var config = BookingConfiguration.Load();
         
         // Migrate legacy single account if it exists and isn't in SavedAccounts yet
@@ -81,21 +82,75 @@ public sealed class IrctcAccountsPanel : UserControl
 
         var mobile = string.IsNullOrWhiteSpace(config.MobileNumber) ? "—" : MaskMobile(config.MobileNumber);
 
-        foreach (var acc in config.SavedAccounts)
+        int[] w = { 180, 110, 120, 110, 70 };
+        string[] headers = { "Username", "Password", "Saved Data", "Linked Mobile", "Status" };
+        int currentX = 10;
+        int currentY = 10;
+
+        // Header
+        for (int i = 0; i < headers.Length; i++)
         {
-            _grid.Rows.Add(acc.Username, "••••••••", $"{config.Passengers.Count} pax saved", mobile, "Active");
+            var lbl = new Label
+            {
+                Text = headers[i],
+                Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+                Location = new Point(currentX, currentY),
+                Size = new Size(w[i], 18),
+                ForeColor = UiTheme.Text,
+                TextAlign = ContentAlignment.BottomLeft
+            };
+            _accountsContainer.Controls.Add(lbl);
+            currentX += w[i] + 4;
         }
 
-        int count = _grid.Rows.Count;
+        currentY += 18;
+
+        // Separator
+        var sep = new Panel
+        {
+            Location = new Point(10, currentY),
+            Size = new Size(620, 1),
+            BackColor = UiTheme.OutlineVariant
+        };
+        _accountsContainer.Controls.Add(sep);
+        currentY += 4;
+
+        foreach (var acc in config.SavedAccounts)
+        {
+            currentX = 10;
+
+            var tUser = new TextBox { Text = acc.Username, Location = new Point(currentX, currentY), Size = new Size(w[0], 18), Font = new Font("Segoe UI", 7.5F), ReadOnly = true, BorderStyle = BorderStyle.FixedSingle };
+            _accountsContainer.Controls.Add(tUser);
+            currentX += w[0] + 4;
+
+            var tPass = new TextBox { Text = "••••••••", Location = new Point(currentX, currentY), Size = new Size(w[1], 18), Font = new Font("Segoe UI", 7.5F), ReadOnly = true, BorderStyle = BorderStyle.FixedSingle };
+            _accountsContainer.Controls.Add(tPass);
+            currentX += w[1] + 4;
+
+            var tData = new TextBox { Text = $"{config.Passengers.Count} pax saved", Location = new Point(currentX, currentY), Size = new Size(w[2], 18), Font = new Font("Segoe UI", 7.5F), ReadOnly = true, BorderStyle = BorderStyle.FixedSingle };
+            _accountsContainer.Controls.Add(tData);
+            currentX += w[2] + 4;
+
+            var tMob = new TextBox { Text = mobile, Location = new Point(currentX, currentY), Size = new Size(w[3], 18), Font = new Font("Segoe UI", 7.5F), ReadOnly = true, BorderStyle = BorderStyle.FixedSingle };
+            _accountsContainer.Controls.Add(tMob);
+            currentX += w[3] + 4;
+
+            var tStat = new TextBox { Text = "Active", Location = new Point(currentX, currentY), Size = new Size(w[4], 18), Font = new Font("Segoe UI", 7.5F), ReadOnly = true, BorderStyle = BorderStyle.FixedSingle };
+            _accountsContainer.Controls.Add(tStat);
+
+            currentY += 26;
+        }
+
+        int count = config.SavedAccounts.Count;
         _countLabel.Text = $"{count} account{(count == 1 ? "" : "s")}";
         
-        AutoSizeParent();
+        AutoSizeParent(count);
     }
 
     /// <summary>Shrinks or grows the host Form so there is no wasted space below the grid.</summary>
-    private void AutoSizeParent()
+    private void AutoSizeParent(int rowCount)
     {
-        int idealClient = BASE_H + ROW_PX * _grid.Rows.Count;
+        int idealClient = BASE_H + ROW_PX * rowCount + 40;
         int capped      = Math.Min(idealClient, MAX_H);
         if (FindForm() is { } frm)
             frm.ClientSize = new Size(frm.ClientSize.Width, capped);
@@ -167,43 +222,5 @@ public sealed class IrctcAccountsPanel : UserControl
         }
     }
 
-    private void ConfigureGrid()
-    {
-        _grid.AllowUserToAddRows = false;
-        _grid.AllowUserToDeleteRows = false;
-        _grid.RowHeadersVisible = false;
-        _grid.BackgroundColor = UiTheme.SurfaceLowest;
-        _grid.BorderStyle = BorderStyle.None;
-        _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        _grid.MultiSelect = false;
-        _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _grid.Font = new Font("Segoe UI", 8F);
 
-        _grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
-        {
-            BackColor = UiTheme.SurfaceLowest,
-            ForeColor = UiTheme.TextMuted,
-            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
-            SelectionBackColor = UiTheme.SurfaceLowest
-        };
-        _grid.ColumnHeadersHeight = 22;
-        _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-
-        _grid.DefaultCellStyle = new DataGridViewCellStyle
-        {
-            BackColor = UiTheme.SurfaceLowest,
-            ForeColor = UiTheme.Text,
-            Font = new Font("Segoe UI", 8F),
-            SelectionBackColor = UiTheme.SurfaceHigh,
-            SelectionForeColor = UiTheme.Text
-        };
-        _grid.EnableHeadersVisualStyles = false;
-        _grid.RowTemplate.Height = 26;
-
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Username", Name = "Username", FillWeight = 25, MinimumWidth = 100 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Password", Name = "Password", FillWeight = 15, MinimumWidth = 80 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Saved Data", Name = "Pnrs", FillWeight = 22, MinimumWidth = 100 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Linked Mobile", Name = "Mobile", FillWeight = 20, MinimumWidth = 90 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", Name = "Status", FillWeight = 18, MinimumWidth = 60 });
-    }
 }

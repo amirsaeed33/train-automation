@@ -31,9 +31,18 @@ public sealed class MainShellForm : Form
                 OpenFixedWindow(() =>
                 {
                     var panel = new IrctcAccountsPanel();
-                    var w = WrapInWindow(panel, "IRCTC Accounts", 760, 500);
+                    var w = WrapInWindow(panel, "IRCTC Accounts", 645, 500);
                     return w;
                 }, "IRCTC Accounts");
+                break;
+
+            case "bank":
+                OpenFixedWindow(() =>
+                {
+                    var panel = new BankManagerPanel();
+                    var w = WrapInWindow(panel, "Bank Manager", 620, 440);
+                    return w;
+                }, "Bank Manager");
                 break;
 
             case "tickets":

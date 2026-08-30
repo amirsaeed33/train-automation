@@ -43,3 +43,28 @@ public sealed class TrainBookingRecord
     public List<PassengerInfo> Passengers { get; init; } = [];
     public BookingPreferences Preferences { get; init; } = new();
 }
+
+public sealed class BankDetails
+{
+    public string Gateway { get; set; } = string.Empty;
+    public string BankName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string NameToSave { get; set; } = string.Empty;
+}
+
+public sealed class CardDetails
+{
+    public string CardCategory { get; set; } = "Debit";
+    public string Gateway { get; set; } = string.Empty;
+    public string BankName { get; set; } = string.Empty;
+    public string CardType { get; set; } = string.Empty;
+    public string CardNumber { get; set; } = string.Empty;
+    public string ExpiryMonth { get; set; } = string.Empty;
+    public string ExpiryYear { get; set; } = string.Empty;
+    public string NameOnCard { get; set; } = string.Empty;
+    public string Pin { get; set; } = string.Empty;
+    public string Cvv { get; set; } = string.Empty;
+    public string ThreeDPassword { get; set; } = string.Empty;
+    public string NameToSave { get; set; } = string.Empty;
+}
