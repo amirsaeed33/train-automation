@@ -2,76 +2,62 @@ namespace train_automation;
 
 public sealed class IrctcAccountsPanel : UserControl
 {
+    private const int ROW_PX  = 26;
+    private const int BASE_H  = 112;
+    private const int MAX_H   = 390;
+
     private readonly DataGridView _grid = new();
+    private readonly Label _countLabel = new();
 
     public IrctcAccountsPanel()
     {
         Dock = DockStyle.Fill;
         BackColor = UiTheme.PageBg;
-        AutoScroll = true;
-        Padding = new Padding(24);
+        Padding = new Padding(12);
 
-        var title = new Label
+        // ── Slim header ──────────────────────────────────────────────────────
+        var header = new Label
         {
-            Text = "Account Manager",
-            Font = UiTheme.HeadlineLg,
+            Text      = "Account Manager",
+            Font      = new Font("Segoe UI", 10F, FontStyle.Bold),
             ForeColor = UiTheme.Text,
-            AutoSize = true,
-            Location = new Point(24, 16)
-        };
-        var sub = new Label
-        {
-            Text = "Manage and monitor linked IRCTC credentials for automated booking.",
-            Font = UiTheme.BodySm,
-            ForeColor = UiTheme.TextMuted,
-            AutoSize = true,
-            Location = new Point(24, 48)
+            AutoSize  = true,
+            Location  = new Point(12, 10)
         };
 
-        var addBtn = UiTheme.CreateSecondaryButton("Add Account", 120, 34);
-        addBtn.Location = new Point(700, 24);
+        var addBtn = UiTheme.CreatePrimaryButton("Add Account", 110, 26);
         addBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        addBtn.Location = new Point(Width - addBtn.Width - 12, 8);
         addBtn.Click += (_, _) => ShowAddAccount();
 
-        var manageBtn = UiTheme.CreatePrimaryButton("Manage Bookings", 150, 34);
-        manageBtn.Location = new Point(830, 24);
-        manageBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        manageBtn.Click += (_, _) =>
-            MessageBox.Show(FindForm(), "Manage Bookings will open the Ticket Manager.", "IRCTC Accounts",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-        var statsHost = new Panel { Location = new Point(24, 90), Size = new Size(1000, 80) };
-        AddStat(statsHost, "1", "Total IDs", UiTheme.Text, 0);
-        AddStat(statsHost, "1", "Active", UiTheme.Success, 1);
-        AddStat(statsHost, "0", "Deactivated", UiTheme.TextMuted, 2);
-        AddStat(statsHost, "0", "Disabled", UiTheme.Warning, 3);
-        AddStat(statsHost, "0", "Invalid", UiTheme.Danger, 4);
-        AddStat(statsHost, "0", "Unverified", UiTheme.TextMuted, 5);
-
+        // ── Card wrapping the grid ───────────────────────────────────────────
         var card = UiTheme.CreateCard();
-        card.Location = new Point(24, 186);
-        card.Size = new Size(1000, 360);
-        card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+        card.Location = new Point(12, 40);
+        card.Anchor   = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
 
         ConfigureGrid();
         _grid.Dock = DockStyle.Fill;
         card.Controls.Add(_grid);
 
-        Controls.Add(title);
-        Controls.Add(sub);
-        Controls.Add(addBtn);
-        Controls.Add(manageBtn);
-        Controls.Add(statsHost);
-        Controls.Add(card);
-
-        Resize += (_, _) =>
+        // ── Slim footer ──────────────────────────────────────────────────────
+        var footer = new Panel
         {
-            manageBtn.Left = Math.Max(400, Width - manageBtn.Width - 24);
-            addBtn.Left = manageBtn.Left - addBtn.Width - 10;
-            card.Width = Math.Max(600, Width - 48);
-            card.Height = Math.Max(220, Height - 210);
-            statsHost.Width = card.Width;
+            Dock      = DockStyle.Bottom,
+            Height    = 30,
+            BackColor = UiTheme.SurfaceLow
         };
+        var footerBorder = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = UiTheme.OutlineVariant };
+        _countLabel.AutoSize  = true;
+        _countLabel.Font      = new Font("Segoe UI", 8F);
+        _countLabel.ForeColor = UiTheme.TextMuted;
+        _countLabel.Location  = new Point(10, 8);
+        footer.Controls.Add(_countLabel);
+        footer.Controls.Add(footerBorder);
+        card.Controls.Add(footer);
+
+        Controls.Add(header);
+        Controls.Add(addBtn);
+        Controls.Add(card);
 
         Load += (_, _) => ReloadFromConfig();
     }
@@ -80,23 +66,44 @@ public sealed class IrctcAccountsPanel : UserControl
     {
         _grid.Rows.Clear();
         var config = BookingConfiguration.Load();
-        var user = config.Credentials.Username;
-        if (string.IsNullOrWhiteSpace(user))
+        
+        // Migrate legacy single account if it exists and isn't in SavedAccounts yet
+        if (!string.IsNullOrWhiteSpace(config.Credentials.Username) && 
+            !config.SavedAccounts.Any(a => a.Username.Equals(config.Credentials.Username, StringComparison.OrdinalIgnoreCase)))
         {
-            return;
+            config.SavedAccounts.Add(new IrctcCredentials
+            {
+                Username = config.Credentials.Username,
+                Password = config.Credentials.Password
+            });
+            config.Save();
         }
 
         var mobile = string.IsNullOrWhiteSpace(config.MobileNumber) ? "—" : MaskMobile(config.MobileNumber);
-        _grid.Rows.Add(user, "••••••••", $"{config.Passengers.Count} pax saved", mobile, "Active");
+
+        foreach (var acc in config.SavedAccounts)
+        {
+            _grid.Rows.Add(acc.Username, "••••••••", $"{config.Passengers.Count} pax saved", mobile, "Active");
+        }
+
+        int count = _grid.Rows.Count;
+        _countLabel.Text = $"{count} account{(count == 1 ? "" : "s")}";
+        
+        AutoSizeParent();
+    }
+
+    /// <summary>Shrinks or grows the host Form so there is no wasted space below the grid.</summary>
+    private void AutoSizeParent()
+    {
+        int idealClient = BASE_H + ROW_PX * _grid.Rows.Count;
+        int capped      = Math.Min(idealClient, MAX_H);
+        if (FindForm() is { } frm)
+            frm.ClientSize = new Size(frm.ClientSize.Width, capped);
     }
 
     private static string MaskMobile(string mobile)
     {
-        if (mobile.Length < 4)
-        {
-            return mobile;
-        }
-
+        if (mobile.Length < 4) return mobile;
         return mobile[..2] + "****" + mobile[^4..];
     }
 
@@ -131,8 +138,21 @@ public sealed class IrctcAccountsPanel : UserControl
             }
 
             var config = BookingConfiguration.Load();
+            
+            // Add to saved accounts list
+            if (!config.SavedAccounts.Any(a => a.Username.Equals(userBox.Text.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                config.SavedAccounts.Add(new IrctcCredentials
+                {
+                    Username = userBox.Text.Trim(),
+                    Password = passBox.Text
+                });
+            }
+            
+            // Also keep it as the primary selected account for legacy fields
             config.Credentials.Username = userBox.Text.Trim();
             config.Credentials.Password = passBox.Text;
+            
             config.Save();
             dlg.DialogResult = DialogResult.OK;
         };
@@ -147,32 +167,6 @@ public sealed class IrctcAccountsPanel : UserControl
         }
     }
 
-    private static void AddStat(Control host, string value, string label, Color valueColor, int index)
-    {
-        var card = UiTheme.CreateCard();
-        card.Size = new Size(150, 70);
-        card.Location = new Point(index * 160, 0);
-        var v = new Label
-        {
-            Text = value,
-            Font = UiTheme.HeadlineMd,
-            ForeColor = valueColor,
-            AutoSize = true,
-            Location = new Point(16, 12)
-        };
-        var l = new Label
-        {
-            Text = label.ToUpperInvariant(),
-            Font = UiTheme.LabelSm,
-            ForeColor = UiTheme.TextMuted,
-            AutoSize = true,
-            Location = new Point(16, 42)
-        };
-        card.Controls.Add(v);
-        card.Controls.Add(l);
-        host.Controls.Add(card);
-    }
-
     private void ConfigureGrid()
     {
         _grid.AllowUserToAddRows = false;
@@ -180,26 +174,36 @@ public sealed class IrctcAccountsPanel : UserControl
         _grid.RowHeadersVisible = false;
         _grid.BackgroundColor = UiTheme.SurfaceLowest;
         _grid.BorderStyle = BorderStyle.None;
+        _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        _grid.MultiSelect = false;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _grid.EnableHeadersVisualStyles = false;
+        _grid.Font = new Font("Segoe UI", 8F);
+
         _grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
         {
-            ForeColor = UiTheme.TextMuted,
-            Font = UiTheme.LabelMd,
             BackColor = UiTheme.SurfaceLowest,
+            ForeColor = UiTheme.TextMuted,
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
             SelectionBackColor = UiTheme.SurfaceLowest
         };
+        _grid.ColumnHeadersHeight = 22;
+        _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+
         _grid.DefaultCellStyle = new DataGridViewCellStyle
         {
             BackColor = UiTheme.SurfaceLowest,
             ForeColor = UiTheme.Text,
+            Font = new Font("Segoe UI", 8F),
             SelectionBackColor = UiTheme.SurfaceHigh,
             SelectionForeColor = UiTheme.Text
         };
-        _grid.Columns.Add("Username", "Username");
-        _grid.Columns.Add("Password", "Password");
-        _grid.Columns.Add("Pnrs", "Saved Data");
-        _grid.Columns.Add("Mobile", "Linked Mobile");
-        _grid.Columns.Add("Status", "Status");
+        _grid.EnableHeadersVisualStyles = false;
+        _grid.RowTemplate.Height = 26;
+
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Username", Name = "Username", FillWeight = 25, MinimumWidth = 100 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Password", Name = "Password", FillWeight = 15, MinimumWidth = 80 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Saved Data", Name = "Pnrs", FillWeight = 22, MinimumWidth = 100 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Linked Mobile", Name = "Mobile", FillWeight = 20, MinimumWidth = 90 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", Name = "Status", FillWeight = 18, MinimumWidth = 60 });
     }
 }

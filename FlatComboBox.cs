@@ -9,6 +9,11 @@ internal sealed class FlatComboBox : ComboBox
 {
     private const int WM_PAINT = 0x000F;
 
+    public FlatComboBox()
+    {
+        FlatStyle = FlatStyle.Flat;
+    }
+
     protected override void WndProc(ref Message m)
     {
         base.WndProc(ref m);
@@ -24,6 +29,10 @@ internal sealed class FlatComboBox : ComboBox
             // Paint over the button with the combo's own BackColor.
             using var brush = new SolidBrush(BackColor);
             g.FillRectangle(brush, btnRect);
+            
+            // Draw a border around the entire control to restore edges
+            using var pen = new Pen(UiTheme.OutlineVariant);
+            g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
         }
     }
 }

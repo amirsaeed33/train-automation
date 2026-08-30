@@ -9,6 +9,23 @@ public partial class NewTicketForm : Form
     private TrainSearchSettings? _lastSearchSettings;
     private TrainSelection? _selectedTrain;
     private TrainListDialog? _trainListDialog;
+    private Panel passengerCustomGridPanel = null!;
+    private readonly List<PassengerRowControls> _passengerRows = new();
+    
+    public class PassengerRowControls
+    {
+        public Label SNo { get; set; } = null!;
+        public TextBox Name { get; set; } = null!;
+        public TextBox Age { get; set; } = null!;
+        public ComboBox Sex { get; set; } = null!;
+        public ComboBox Berth { get; set; } = null!;
+        public ComboBox Food { get; set; } = null!;
+        public ComboBox Nationality { get; set; } = null!;
+        public TextBox Passport { get; set; } = null!;
+        public CheckBox Child { get; set; } = null!;
+        public CheckBox Senior { get; set; } = null!;
+        public CheckBox Bed { get; set; } = null!;
+    }
 
     public NewTicketForm()
     {
@@ -33,9 +50,9 @@ public partial class NewTicketForm : Form
 
     private void NewTicketForm_Load(object sender, EventArgs e)
     {
+        this.Font = new Font("Segoe UI", 7.5F); // compact base font
         FlattenLayout();
         LoadStations();
-        ConfigurePassengerGrid();
         ConfigureDropdowns();
         ApplyDarkThemeToInputs();
         LoadBookingConfigIntoUi();
@@ -52,12 +69,12 @@ public partial class NewTicketForm : Form
 
         foreach (var c in inputs)
         {
-            c.Font = new Font("Segoe UI", 9F);
+            c.Font = new Font("Segoe UI", 7.5F);
             c.BackColor = UiTheme.Surface;
             c.ForeColor = UiTheme.Text;
         }
         
-        travelDatePicker.Font = new Font("Segoe UI", 9F);
+        travelDatePicker.Font = new Font("Segoe UI", 7.5F);
         travelDatePicker.CalendarMonthBackground = UiTheme.Surface;
 
         // Increase all label fonts in content panel back to readable sizes
@@ -65,7 +82,7 @@ public partial class NewTicketForm : Form
         {
             if (c is Label lbl && c != findButton && c != getFareButton && c != availabilityLink)
             {
-                lbl.Font = new Font("Segoe UI", 9F);
+                lbl.Font = new Font("Segoe UI", 7.5F);
             }
         }
     }
@@ -124,30 +141,37 @@ public partial class NewTicketForm : Form
 
     private void ApplySavedPassengersToGrid()
     {
-        if (_config.Passengers.Count == 0)
+        if (_config.Passengers.Count == 0 || _passengerRows.Count == 0)
         {
             return;
         }
 
         var limit = GetPassengerRowLimit();
-        UpdatePassengerRowCount(Math.Max(limit, Math.Min(6, _config.Passengers.Count)));
+        UpdatePassengerRowCount(limit);
 
-        for (var i = 0; i < passengerGrid.Rows.Count && i < _config.Passengers.Count; i++)
+        for (var i = 0; i < _passengerRows.Count && i < _config.Passengers.Count; i++)
         {
             var p = _config.Passengers[i];
-            var row = passengerGrid.Rows[i];
-            row.Cells["Sno"].Value = i + 1;
-            row.Cells["Name"].Value = p.Name;
-            row.Cells["Age"].Value = p.Age;
-            row.Cells["Sex"].Value = p.Gender switch
+            var row = _passengerRows[i];
+            
+            row.Name.Text = p.Name;
+            row.Age.Text = p.Age ?? string.Empty;
+            
+            string sexStr = p.Gender switch
             {
                 "Female" => "F",
                 "Transgender" => "T",
                 _ => "M"
             };
-            row.Cells["Berth"].Value = MapBerthToGrid(p.BerthPreference);
-            row.Cells["Food"].Value = MapFoodToGrid(p.FoodPreference);
-            row.Cells["Nationality"].Value = "India-IN";
+            if (row.Sex.Items.Contains(sexStr)) row.Sex.SelectedItem = sexStr;
+            
+            string berthStr = MapBerthToGrid(p.BerthPreference);
+            if (row.Berth.Items.Contains(berthStr)) row.Berth.SelectedItem = berthStr;
+            
+            string foodStr = MapFoodToGrid(p.FoodPreference);
+            if (row.Food.Items.Contains(foodStr)) row.Food.SelectedItem = foodStr;
+            
+            row.Nationality.SelectedItem = "India-IN";
         }
     }
 
@@ -198,72 +222,7 @@ public partial class NewTicketForm : Form
         backupBankCombo.SelectedIndex = 0;
     }
 
-    private void ConfigurePassengerGrid()
-    {
-        passengerGrid.AutoGenerateColumns = false;
-        passengerGrid.AllowUserToAddRows = false;
-        passengerGrid.AllowUserToDeleteRows = false;
-        passengerGrid.RowHeadersVisible = false;
-        passengerGrid.BackgroundColor = UiTheme.PageBg;
-        passengerGrid.BorderStyle = BorderStyle.None;
-        passengerGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        passengerGrid.MultiSelect = false;
-        passengerGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
-
-        passengerGrid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
-        {
-            BackColor = UiTheme.Surface,
-            ForeColor = UiTheme.TextMuted,
-            Font = new Font("Segoe UI", 9F),
-            SelectionBackColor = UiTheme.Surface
-        };
-        passengerGrid.DefaultCellStyle = new DataGridViewCellStyle
-        {
-            BackColor = UiTheme.Surface,
-            ForeColor = UiTheme.Text,
-            Font = new Font("Segoe UI", 9F),
-            SelectionBackColor = UiTheme.SurfaceHigh,
-            SelectionForeColor = UiTheme.Text
-        };
-        passengerGrid.EnableHeadersVisualStyles = false;
-        passengerGrid.ColumnHeadersHeight = 26;
-        passengerGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-        passengerGrid.RowTemplate.Height = 24;
-
-        passengerGrid.Columns.Clear();
-
-        // Fixed pixel widths — wide enough that headers don't truncate (Sno/Age/Child/Senior/Bed)
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Sno",  Name = "Sno",  Width = 44,  ReadOnly = true });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", Name = "Name", Width = 155 });
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Age",  Name = "Age",  Width = 44  });
-
-        var sexColumn = new DataGridViewComboBoxColumn { HeaderText = "Sex", Name = "Sex", Width = 58, FlatStyle = FlatStyle.Flat };
-        sexColumn.Items.AddRange("M", "F", "T");
-        passengerGrid.Columns.Add(sexColumn);
-
-        var berthColumn = new DataGridViewComboBoxColumn { HeaderText = "Berth", Name = "Berth", Width = 105, FlatStyle = FlatStyle.Flat };
-        berthColumn.Items.AddRange("No Choice", "Lower", "Middle", "Upper", "Side Lower", "Side Upper");
-        passengerGrid.Columns.Add(berthColumn);
-
-        var foodColumn = new DataGridViewComboBoxColumn { HeaderText = "Food", Name = "Food", Width = 82, FlatStyle = FlatStyle.Flat };
-        foodColumn.Items.AddRange("No Choice", "Veg", "Non-Veg");
-        // Hidden by default — Mail/Express (default train type) has no food service.
-        // TrainTypeCombo_SelectedIndexChanged will show it for premium trains (Rajdhani etc.).
-        foodColumn.Visible = false;
-        passengerGrid.Columns.Add(foodColumn);
-
-        var nationalityColumn = new DataGridViewComboBoxColumn { HeaderText = "Nationality", Name = "Nationality", Width = 105, FlatStyle = FlatStyle.Flat };
-        nationalityColumn.Items.Add("India-IN");
-        passengerGrid.Columns.Add(nationalityColumn);
-
-        passengerGrid.Columns.Add(new DataGridViewTextBoxColumn  { HeaderText = "Passport", Name = "Passport", Width = 92  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Child",    Name = "Child",    Width = 56  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Senior",   Name = "Senior",   Width = 62  });
-        passengerGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Bed",      Name = "Bed",      Width = 48  });
-
-
-        UpdatePassengerRowCount(GetPassengerRowLimit());
-    }
+    // Custom grid config logic moved to FlattenLayout
 
     private int GetPassengerRowLimit() =>
         quotaGeneralRadio.Checked || quotaLadiesRadio.Checked ? 6 : 4;
@@ -275,9 +234,9 @@ public partial class NewTicketForm : Form
                       type.Equals("Shatabdi", StringComparison.OrdinalIgnoreCase) ||
                       type.Equals("Vande Bharat", StringComparison.OrdinalIgnoreCase);
 
-        if (passengerGrid.Columns["Food"] is { } foodCol)
+        foreach (var row in _passengerRows)
         {
-            foodCol.Visible = hasFood;
+            row.Food.Enabled = hasFood;
         }
     }
 
@@ -292,40 +251,24 @@ public partial class NewTicketForm : Form
         getFareButton.Visible = quotaTatkalRadio.Checked || quotaPremiumRadio.Checked;
     }
 
-    private void UpdatePassengerRowCount(int rowCount)
+    private void UpdatePassengerRowCount(int limit)
     {
-        var existingRows = new List<object[]>();
-        foreach (DataGridViewRow row in passengerGrid.Rows)
+        for (int i = 0; i < _passengerRows.Count; i++)
         {
-            if (row.IsNewRow)
-            {
-                continue;
-            }
-
-            existingRows.Add(row.Cells.Cast<DataGridViewCell>().Select(cell => cell.Value ?? string.Empty).ToArray());
+            bool isEnabled = i < limit;
+            var row = _passengerRows[i];
+            
+            row.Name.Enabled = isEnabled;
+            row.Age.Enabled = isEnabled;
+            row.Sex.Enabled = isEnabled;
+            row.Berth.Enabled = isEnabled;
+            row.Food.Enabled = isEnabled;
+            row.Nationality.Enabled = isEnabled;
+            row.Passport.Enabled = isEnabled;
+            row.Child.Enabled = isEnabled;
+            row.Senior.Enabled = isEnabled;
+            row.Bed.Enabled = isEnabled;
         }
-
-        passengerGrid.Rows.Clear();
-
-        for (var index = 1; index <= rowCount; index++)
-        {
-            if (index <= existingRows.Count)
-            {
-                var saved = existingRows[index - 1];
-                saved[0] = index;
-                passengerGrid.Rows.Add(saved);
-            }
-            else
-            {
-                passengerGrid.Rows.Add(index, string.Empty, string.Empty, "M", "No Choice", "No Choice", "India-IN", string.Empty, false, false, false);
-            }
-        }
-        
-        // header=26, row=24 each, +4 for border/padding — no scrollbar
-        int gridHeight = passengerGrid.ColumnHeadersHeight + (rowCount * passengerGrid.RowTemplate.Height) + 4;
-        passengerGrid.Height = gridHeight;
-        
-        PositionBottomElements();
     }
 
     private static void PopulateStationCombo(FlatComboBox comboBox, IReadOnlyList<StationInfo> stations)
@@ -858,27 +801,29 @@ public partial class NewTicketForm : Form
     private List<PassengerInfo> GetPassengers()
     {
         var passengers = new List<PassengerInfo>();
-        foreach (DataGridViewRow row in passengerGrid.Rows)
+        foreach (var row in _passengerRows)
         {
-            var name = row.Cells["Name"].Value?.ToString()?.Trim() ?? string.Empty;
+            if (!row.Name.Enabled) continue; // Skip disabled rows
+
+            var name = row.Name.Text.Trim();
             if (string.IsNullOrWhiteSpace(name))
             {
                 continue;
             }
 
-            _ = int.TryParse(row.Cells["Age"].Value?.ToString(), out var age);
+            _ = int.TryParse(row.Age.Text, out var age);
             passengers.Add(new PassengerInfo
             {
                 Name = name,
                 Age = age,
-                Gender = row.Cells["Sex"].Value?.ToString() ?? "M",
-                Berth = row.Cells["Berth"].Value?.ToString() ?? "No Choice",
-                Food = row.Cells["Food"].Value?.ToString() ?? "No Choice",
-                Nationality = row.Cells["Nationality"].Value?.ToString() ?? "India-IN",
-                Passport = row.Cells["Passport"].Value?.ToString() ?? string.Empty,
-                IsChild = row.Cells["Child"].Value is true,
-                IsSenior = row.Cells["Senior"].Value is true,
-                BedRoll = row.Cells["Bed"].Value is true
+                Gender = row.Sex.SelectedItem?.ToString() ?? "M",
+                Berth = row.Berth.SelectedItem?.ToString() ?? "No Choice",
+                Food = row.Food.SelectedItem?.ToString() ?? "No Choice",
+                Nationality = row.Nationality.SelectedItem?.ToString() ?? "India-IN",
+                Passport = row.Passport.Text.Trim(),
+                IsChild = row.Child.Checked,
+                IsSenior = row.Senior.Checked,
+                BedRoll = row.Bed.Checked
             });
         }
 

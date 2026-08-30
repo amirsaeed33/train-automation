@@ -341,7 +341,7 @@ namespace train_automation
             // availabilityLink
             //
             availabilityLink.AutoSize = true;
-            availabilityLink.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            availabilityLink.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
             availabilityLink.LinkColor = primary;
             availabilityLink.Location = new Point(388, 124);
             availabilityLink.Name = "availabilityLink";
@@ -851,7 +851,7 @@ namespace train_automation
             // statusDotLabel
             //
             statusDotLabel.AutoSize = true;
-            statusDotLabel.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
+            statusDotLabel.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
             statusDotLabel.ForeColor = UiTheme.Success;
             statusDotLabel.Location = new Point(14, 11);
             statusDotLabel.Name = "statusDotLabel";
@@ -862,7 +862,7 @@ namespace train_automation
             // statusLabel
             //
             statusLabel.AutoSize = true;
-            statusLabel.Font = new Font("Segoe UI", 9.5F);
+            statusLabel.Font = new Font("Segoe UI", 7.5F);
             statusLabel.ForeColor = textMuted;
             statusLabel.Location = new Point(32, 24);
             statusLabel.Name = "statusLabel";
@@ -876,7 +876,7 @@ namespace train_automation
             saveButton.FlatStyle = FlatStyle.Flat;
             saveButton.FlatAppearance.BorderColor = borderColor;
             saveButton.FlatAppearance.BorderSize = 1;
-            saveButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            saveButton.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
             saveButton.ForeColor = textMuted;
             saveButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             saveButton.Location = new Point(380, 14);
@@ -892,7 +892,7 @@ namespace train_automation
             bookIrctcButton.BackColor = primary;
             bookIrctcButton.FlatStyle = FlatStyle.Flat;
             bookIrctcButton.FlatAppearance.BorderSize = 0;
-            bookIrctcButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            bookIrctcButton.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
             bookIrctcButton.ForeColor = Color.White;
             bookIrctcButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             bookIrctcButton.Location = new Point(470, 14);
@@ -909,7 +909,7 @@ namespace train_automation
             stopButton.FlatStyle = FlatStyle.Flat;
             stopButton.FlatAppearance.BorderColor = danger;
             stopButton.FlatAppearance.BorderSize = 1;
-            stopButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            stopButton.Font = new Font("Segoe UI", 7.5F, FontStyle.Bold);
             stopButton.ForeColor = danger;
             stopButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             stopButton.Location = new Point(616, 14);

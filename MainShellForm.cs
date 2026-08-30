@@ -31,7 +31,7 @@ public sealed class MainShellForm : Form
                 OpenFixedWindow(() =>
                 {
                     var panel = new IrctcAccountsPanel();
-                    var w = WrapInWindow(panel, "IRCTC Accounts", 700, 500);
+                    var w = WrapInWindow(panel, "IRCTC Accounts", 760, 500);
                     return w;
                 }, "IRCTC Accounts");
                 break;
@@ -46,7 +46,7 @@ public sealed class MainShellForm : Form
                         runner.Show(this);
                     };
                     panel.NavigateToNewTicket += (_, _) => OnNavigate(this, "new-ticket");
-                    return WrapInWindow(panel, "Open Tickets", 800, 550);
+                    return WrapInWindow(panel, "Open Tickets", 580, 310);
                 }, "Open Tickets");
                 break;
 

@@ -8,6 +8,7 @@ namespace train_automation;
 public sealed class BookingConfiguration
 {
     public IrctcCredentials Credentials { get; set; } = new();
+    public List<IrctcCredentials> SavedAccounts { get; set; } = new();
     public List<Passenger> Passengers { get; set; } = new();
 
     /// <summary>Preferred coach class code, e.g. SL, 3A, 2A, CC, 2S.</summary>
@@ -82,6 +83,11 @@ public sealed class BookingConfiguration
                 if (config != null)
                 {
                     config.Credentials.Password = CredentialProtector.Unprotect(config.Credentials.Password);
+                    if (config.SavedAccounts != null)
+                    {
+                        foreach (var acc in config.SavedAccounts)
+                            acc.Password = CredentialProtector.Unprotect(acc.Password);
+                    }
                     return config;
                 }
             }
@@ -105,6 +111,11 @@ public sealed class BookingConfiguration
                     Username = Credentials.Username,
                     Password = CredentialProtector.Protect(Credentials.Password)
                 },
+                SavedAccounts = SavedAccounts.Select(a => new IrctcCredentials
+                {
+                    Username = a.Username,
+                    Password = CredentialProtector.Protect(a.Password)
+                }).ToList(),
                 Passengers = Passengers.Select(p => new Passenger
                 {
                     Name = p.Name,
