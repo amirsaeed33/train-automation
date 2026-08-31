@@ -253,7 +253,7 @@ public sealed class BankManagerPanel : UserControl
         var btnDelete = UiTheme.CreatePrimaryButton("Delete", 80, 26);
         btnDelete.BackColor = UiTheme.Surface;
         btnDelete.ForeColor = UiTheme.Text;
-        var btnDeleteAll = UiTheme.CreatePrimaryButton("Delete All", 90, 26);
+        var btnDeleteAll = UiTheme.CreatePrimaryButton("Delete All", 110, 26);
         btnDeleteAll.BackColor = UiTheme.Surface;
         btnDeleteAll.ForeColor = UiTheme.Text;
 

@@ -61,9 +61,41 @@ public sealed class LauncherPanel : UserControl
         Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = UiTheme.OutlineVariant });
 
         // ── Checkbox row 1 ────────────────────────────────────────────────
-        var betaCheck    = new CheckBox { Text = "Beta UI",         Checked = true  };
-        var chromeCheck  = new CheckBox { Text = "Real Chrome (CDP)", Checked = true };
-        var confirmCheck = new CheckBox { Text = "Confirm Berths",  Checked = false };
+        var chromeCheck = new CheckBox { Text = "WEB-Chrome" };
+        var operaCheck  = new CheckBox { Text = "WEB-Opera" };
+        var braveCheck  = new CheckBox { Text = "WEB-Brave" };
+        var cometCheck  = new CheckBox { Text = "WEB-Comet" };
+        var app1Check   = new CheckBox { Text = "APP-1" };
+        var app2Check   = new CheckBox { Text = "APP-2" };
+        var betaCheck   = new CheckBox { Text = "Beta UI" };
+
+        var config = BookingConfiguration.Load();
+        betaCheck.Checked = config.UseBetaView;
+        betaCheck.CheckedChanged += (_, _) => {
+            var c = BookingConfiguration.Load();
+            c.UseBetaView = betaCheck.Checked;
+            c.Save();
+        };
+
+        var browsers = new[] { chromeCheck, operaCheck, braveCheck, cometCheck, app1Check, app2Check };
+        foreach (var b in browsers)
+        {
+            if (b.Text == config.SelectedBrowser) b.Checked = true;
+            b.CheckedChanged += (s, e) => {
+                var chk = (CheckBox)s;
+                if (chk.Checked) {
+                    foreach (var other in browsers) if (other != chk) other.Checked = false;
+                    var c = BookingConfiguration.Load();
+                    c.SelectedBrowser = chk.Text;
+                    c.Save();
+                } else if (browsers.All(x => !x.Checked)) {
+                    var c = BookingConfiguration.Load();
+                    c.SelectedBrowser = "WEB-Chrome";
+                    c.Save();
+                }
+            };
+        }
+        if (browsers.All(x => !x.Checked)) chromeCheck.Checked = true;
 
         var resetBtn = new Button
         {
@@ -79,17 +111,14 @@ public sealed class LauncherPanel : UserControl
         resetBtn.Click += (_, _) =>
         {
             betaCheck.Checked = false;
-            chromeCheck.Checked = false;
-            confirmCheck.Checked = false;
+            chromeCheck.Checked = true;
         };
 
-        Controls.Add(BuildCheckRow(betaCheck, chromeCheck, confirmCheck, resetBtn));
-
-        // ── Checkbox row 2 ────────────────────────────────────────────────
         var altAvailCheck    = new CheckBox { Text = "Alternate Avail", Checked = false };
         var directLoginCheck = new CheckBox { Text = "Direct Login",    Checked = false };
 
-        Controls.Add(BuildCheckRow(altAvailCheck, directLoginCheck));
+        Controls.Add(BuildCheckRow(chromeCheck, operaCheck, braveCheck, cometCheck, app1Check, app2Check));
+        Controls.Add(BuildCheckRow(betaCheck, altAvailCheck, directLoginCheck, resetBtn));
 
         // Bring to front so DockStyle.Top stacks correctly
         foreach (Control c in Controls) c.BringToFront();
@@ -102,11 +131,11 @@ public sealed class LauncherPanel : UserControl
         var row = new FlowLayoutPanel
         {
             Dock          = DockStyle.Top,
-            Height        = 26,
+            Height        = 32,
             BackColor     = UiTheme.PageBg,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents  = false,
-            Padding       = new Padding(10, 4, 0, 0)
+            Padding       = new Padding(10, 6, 0, 0)
         };
 
         foreach (var ctrl in controls)
@@ -160,7 +189,7 @@ public sealed class LauncherPanel : UserControl
 
     private void OnActionClick(string page, string label)
     {
-        if (string.IsNullOrEmpty(page) || page == "logs")
+        if (string.IsNullOrEmpty(page))
         {
             MessageBox.Show(FindForm(), $"{label} will be added next.", "RailBot Pro",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);

@@ -102,7 +102,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         BookingConfiguration config,
         IProgress<string>? progress)
     {
-        if (config.UseRealChrome)
+        if (config.SelectedBrowser == "WEB-Chrome" && config.UseRealChrome)
         {
             try
             {
@@ -119,7 +119,7 @@ public sealed class IrctcBookingService : IAsyncDisposable
         }
 
         _ownsBrowserProcess = true;
-        return await LaunchPersistentIrctcContextAsync(progress);
+        return await LaunchPersistentIrctcContextAsync(config, progress);
     }
 
     private async Task<IBrowserContext?> ConnectOrStartRealChromeAsync(
@@ -230,7 +230,31 @@ public sealed class IrctcBookingService : IAsyncDisposable
         return candidates.FirstOrDefault(File.Exists);
     }
 
-    private async Task<IBrowserContext> LaunchPersistentIrctcContextAsync(IProgress<string>? progress)
+    private static string? FindOperaExecutable()
+    {
+        string[] candidates =
+        [
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Programs", "Opera", "opera.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Opera", "opera.exe")
+        ];
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? FindBraveExecutable()
+    {
+        string[] candidates =
+        [
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+        ];
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private async Task<IBrowserContext> LaunchPersistentIrctcContextAsync(BookingConfiguration config, IProgress<string>? progress)
     {
         // ChromiumSandbox MUST be true — Playwright defaults to false and adds --no-sandbox,
         // which Chrome shows as a yellow banner and bot systems treat as automation.
@@ -249,11 +273,41 @@ public sealed class IrctcBookingService : IAsyncDisposable
             // No custom Args — Chrome warns on AutomationControlled and IRCTC treats it as a bot
         };
 
+        if (config.SelectedBrowser == "WEB-Opera")
+        {
+            var operaPath = FindOperaExecutable();
+            if (operaPath != null) opts.ExecutablePath = operaPath;
+            else progress?.Report("Opera not found, falling back to Chromium");
+        }
+        else if (config.SelectedBrowser == "WEB-Brave")
+        {
+            var bravePath = FindBraveExecutable();
+            if (bravePath != null) opts.ExecutablePath = bravePath;
+            else progress?.Report("Brave not found, falling back to Chromium");
+        }
+        else if (config.SelectedBrowser == "WEB-Comet")
+        {
+            opts.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Comet/1.0.0";
+        }
+        else if (config.SelectedBrowser == "APP-1")
+        {
+            opts.UserAgent = "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36";
+            opts.ViewportSize = new ViewportSize { Width = 360, Height = 800 };
+        }
+        else if (config.SelectedBrowser == "APP-2")
+        {
+            opts.UserAgent = "IRCTC/4.2.14 (Android 13)";
+            opts.ViewportSize = new ViewportSize { Width = 412, Height = 915 };
+        }
+
         // Prefer installed Google Chrome (realer fingerprint than bundled Chromium)
         try
         {
-            opts.Channel = "chrome";
-            progress?.Report($"Browser profile: {IrctcBrowserProfileDir} (Google Chrome, sandbox ON)");
+            if (string.IsNullOrEmpty(opts.ExecutablePath))
+            {
+                opts.Channel = "chrome";
+            }
+            progress?.Report($"Browser profile: {IrctcBrowserProfileDir} ({config.SelectedBrowser}, sandbox ON)");
             return await _playwright!.Chromium.LaunchPersistentContextAsync(IrctcBrowserProfileDir, opts);
         }
         catch (Exception ex)

@@ -59,6 +59,14 @@ public sealed class MainShellForm : Form
                 }, "Open Tickets");
                 break;
 
+            case "logs":
+                OpenFixedWindow(() =>
+                {
+                    var panel = new HistoryLogsPanel();
+                    return WrapInWindow(panel, "History & Logs", 450, 350);
+                }, "History & Logs");
+                break;
+
             default:
                 MessageBox.Show(this, $"{page} coming soon.", "RailBot Pro",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);

@@ -62,8 +62,9 @@ public sealed class BookingConfiguration
     /// <summary>
     /// If set (HH:mm:ss local), wait until that clock time before clicking Search on IRCTC.
     /// Empty = search immediately.
-    /// </summary>
     public string ScheduledSearchTime { get; set; } = string.Empty;
+
+    public string SelectedBrowser { get; set; } = "WEB-Chrome";
 
     private static readonly string ConfigFilePath =
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
@@ -177,7 +178,8 @@ public sealed class BookingConfiguration
                 ChromeCdpUrl = ChromeCdpUrl,
                 RefreshIntervalMs = RefreshIntervalMs,
                 AvailabilityTimeoutSeconds = AvailabilityTimeoutSeconds,
-                ScheduledSearchTime = ScheduledSearchTime
+                ScheduledSearchTime = ScheduledSearchTime,
+                SelectedBrowser = SelectedBrowser
             };
 
             var json = JsonSerializer.Serialize(toSave, JsonOptions);
